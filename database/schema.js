@@ -1,8 +1,13 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs   = require('fs');
 
 // Railway 掛載磁碟預設在 /data，本機則放在專案根目錄
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'leica.db');
+
+// 確保目錄存在
+const DB_DIR = path.dirname(DB_PATH);
+if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
 
 function getDb() {
   return new Database(DB_PATH);
