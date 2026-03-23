@@ -381,3 +381,147 @@ function formatDate(str) {
 function escapeJs(str) {
   return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
+
+// ── Import Products ───────────────────────────────────────────
+let _importProducts = [];
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').style.borderColor = '#CCC';
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+}
+
+function handleFileSelect(input) {
+  const file = input.files[0];
+  if (file) processFile(file);
+}
+
+async function processFile(file) {
+  if (!file.name.match(/\.xlsx?$/i)) {
+    showToast('請選擇 .xlsx 或 .xls 檔案', 'error');
+    return;
+  }
+
+  // Show progress
+  document.getElementById('uploadProgress').style.display = 'block';
+  document.getElementById('uploadProgressText').textContent = '正在上傳並呼叫 Claude AI 分析…';
+  document.getElementById('dropZone').style.opacity = '0.5';
+  document.getElementById('dropZone').style.pointerEvents = 'none';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/admin/import/preview', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: formData,
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || '分析失敗', 'error');
+      resetImportUI();
+      return;
+    }
+
+    _importProducts = data.products;
+    renderImportPreview(data);
+  } catch (e) {
+    showToast('上傳失敗：' + e.message, 'error');
+    resetImportUI();
+  }
+}
+
+function resetImportUI() {
+  document.getElementById('uploadProgress').style.display = 'none';
+  document.getElementById('dropZone').style.opacity = '1';
+  document.getElementById('dropZone').style.pointerEvents = 'auto';
+  document.getElementById('excelFileInput').value = '';
+}
+
+function renderImportPreview(data) {
+  resetImportUI();
+  document.getElementById('importStep1').style.display = 'none';
+  document.getElementById('importStep2').style.display = 'block';
+  document.getElementById('importStep3').style.display = 'none';
+
+  // Summary pills
+  document.getElementById('importSummary').innerHTML = `
+    <span class="summary-pill pill-total">共 ${data.total} 筆</span>
+    <span class="summary-pill pill-new">新增 ${data.new_count}</span>
+    <span class="summary-pill pill-update">更新 ${data.update_count}</span>
+    ${data.error_count ? `<span class="summary-pill pill-error">錯誤 ${data.error_count}</span>` : ''}
+  `;
+
+  // Table rows
+  const CATEGORY_LABELS = {
+    base:'基礎配置', orientation:'檢體夾具固定裝置', clamping:'快速夾緊系統',
+    holder:'檢體夾具', blade_base:'刀架底座', blade_holder:'刀架/刀片架',
+    blade:'刀片（耗材）', cooling:'冷卻系統', lighting:'照明與觀察裝置', accessory:'其他配件',
+  };
+  const STATUS_MAP = {
+    new:    '<span class="import-badge import-new">新增</span>',
+    update: '<span class="import-badge import-update">更新</span>',
+    error:  '<span class="import-badge import-error">錯誤</span>',
+  };
+
+  const tbody = document.getElementById('importPreviewBody');
+  tbody.innerHTML = data.products.map((p, i) => `
+    <tr style="${p._status === 'error' ? 'background:#FFF5F5' : ''}">
+      <td>${STATUS_MAP[p._status] || p._status}</td>
+      <td><code style="font-size:12px">${p.catalog_number || '—'}</code></td>
+      <td>${p.name_zh || '—'}</td>
+      <td>${CATEGORY_LABELS[p.category] || p.category || '—'}</td>
+      <td class="text-right">${p.cost_price ? p.cost_price.toLocaleString() : '—'}</td>
+      <td class="text-right">${p.min_sell_price ? p.min_sell_price.toLocaleString() : '—'}</td>
+      <td class="text-right">${p.suggested_price ? p.suggested_price.toLocaleString() : '—'}</td>
+      <td class="text-right">${p.retail_price ? p.retail_price.toLocaleString() : '—'}</td>
+      <td style="color:#C0392B; font-size:12px">${(p._errors || []).join(', ')}</td>
+    </tr>
+  `).join('');
+
+  // Disable confirm if all errors
+  const hasValid = data.products.some(p => p._status !== 'error');
+  document.getElementById('confirmImportBtn').disabled = !hasValid;
+}
+
+async function confirmImport() {
+  const validProducts = _importProducts.filter(p => p._status !== 'error');
+  if (!validProducts.length) { showToast('沒有可匯入的資料', 'error'); return; }
+
+  const includePricing = document.getElementById('includePricing').checked;
+  document.getElementById('confirmImportBtn').disabled = true;
+  document.getElementById('confirmImportBtn').textContent = '匯入中…';
+
+  try {
+    const res = await apiFetch('/api/admin/import/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ products: validProducts, include_pricing: includePricing }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || '匯入失敗', 'error'); return; }
+
+    document.getElementById('importStep2').style.display = 'none';
+    document.getElementById('importStep3').style.display = 'block';
+    document.getElementById('importResultMsg').textContent = `匯入完成！`;
+    document.getElementById('importResultDetail').textContent =
+      `新增 ${data.inserted} 筆，更新 ${data.updated} 筆`;
+    showToast(`匯入完成：新增 ${data.inserted}、更新 ${data.updated}`);
+  } catch (e) {
+    showToast('匯入失敗：' + e.message, 'error');
+    document.getElementById('confirmImportBtn').disabled = false;
+    document.getElementById('confirmImportBtn').textContent = '✅ 確認匯入';
+  }
+}
+
+function resetImport() {
+  _importProducts = [];
+  document.getElementById('importStep1').style.display = 'block';
+  document.getElementById('importStep2').style.display = 'none';
+  document.getElementById('importStep3').style.display = 'none';
+  resetImportUI();
+}

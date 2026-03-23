@@ -221,7 +221,33 @@ header .user-info { display: flex; align-items: center; gap: 12px; }
 .mt-16 { margin-top: 16px; }
 .mt-24 { margin-top: 24px; }
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
+.text-right { text-align: right; }
 .alert { padding: 10px 16px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; }
 .alert-info { background: #D1ECF1; color: #0C5460; }
 .alert-warn { background: #FFF3CD; color: #856404; }
 hr { border: none; border-top: 1px solid var(--leica-border); margin: 16px 0; }
+
+/* ── Spinner ─────────────────────────────── */
+.spinner {
+  width: 24px; height: 24px;
+  border: 3px solid rgba(0,95,174,0.2);
+  border-top-color: #005FAE;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Import Status Badges ────────────────── */
+.import-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; font-weight:600; white-space:nowrap; }
+.import-new    { background:#D4EDDA; color:#155724; }
+.import-update { background:#D1ECF1; color:#0C5460; }
+.import-error  { background:#F8D7DA; color:#721C24; }
+
+/* ── Import Summary Pills ────────────────── */
+.summary-pill { padding:6px 14px; border-radius:20px; font-size:13px; font-weight:600; }
+.pill-total  { background:#EEE; color:#333; }
+.pill-new    { background:#D4EDDA; color:#155724; }
+.pill-update { background:#D1ECF1; color:#0C5460; }
+.pill-error  { background:#F8D7DA; color:#721C24; }

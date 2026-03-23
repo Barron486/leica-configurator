@@ -12,6 +12,7 @@ const { JWT_SECRET } = require('./routes/auth');
 const productRoutes = require('./routes/products');
 const quoteRoutes   = require('./routes/quotes');
 const adminRoutes   = require('./routes/admin');
+const importRoutes  = require('./routes/import');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -79,6 +80,7 @@ app.use('/api/auth',     authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/quotes',   quoteRoutes);
 app.use('/api/admin',    adminRoutes);
+app.use('/api/admin/import', importRoutes);
 
 // ── SPA fallback ──────────────────────────────────────────────
 app.get('/{*path}', (req, res) => {

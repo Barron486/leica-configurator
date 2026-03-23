@@ -26,6 +26,7 @@
     <button class="tab-btn" onclick="switchTab('pricing')">💰 定價管理</button>
     <button class="tab-btn" onclick="switchTab('products')">📦 產品管理</button>
     <button class="tab-btn" onclick="switchTab('users')">👤 用戶管理</button>
+    <button class="tab-btn" id="tab-btn-import" onclick="switchTab('import')">📥 匯入產品</button>
   </div>
 
   <!-- Tab: Quotes -->
@@ -136,6 +137,88 @@
           <tr><td colspan="6" class="text-muted">載入中…</td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+
+  <!-- Tab: Import -->
+  <div id="tab-import" class="tab-panel">
+    <div class="flex-between" style="margin-bottom:16px">
+      <strong>📥 Excel 產品批次匯入（AI 自動識別）</strong>
+    </div>
+
+    <!-- Step 1: Upload -->
+    <div class="card" id="importStep1">
+      <h4 style="margin:0 0 12px">步驟一：上傳 Excel 檔案</h4>
+      <div id="dropZone" style="
+        border: 2px dashed #CCC; border-radius:8px; padding:40px;
+        text-align:center; cursor:pointer; transition:border-color 0.2s;
+      " onclick="document.getElementById('excelFileInput').click()"
+         ondragover="event.preventDefault(); this.style.borderColor='#005FAE'"
+         ondragleave="this.style.borderColor='#CCC'"
+         ondrop="handleDrop(event)">
+        <div style="font-size:2.5rem">📄</div>
+        <div style="margin-top:8px; color:#555">點擊或拖曳 Excel 檔案到此處</div>
+        <div class="text-muted text-small" style="margin-top:4px">.xlsx / .xls，最大 10MB</div>
+      </div>
+      <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleFileSelect(this)">
+
+      <div style="margin-top:16px">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
+          <input type="checkbox" id="includePricing" checked>
+          <span>同時匯入／更新價格欄位（成本、最低售價、建議報價、零售價）</span>
+        </label>
+      </div>
+
+      <div id="uploadProgress" style="display:none; margin-top:16px">
+        <div style="display:flex; align-items:center; gap:10px; color:#005FAE">
+          <div class="spinner" style="width:20px; height:20px; border-width:2px"></div>
+          <span id="uploadProgressText">正在呼叫 Claude AI 分析…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Preview -->
+    <div class="card" id="importStep2" style="display:none">
+      <div class="flex-between" style="margin-bottom:12px">
+        <h4 style="margin:0">步驟二：確認匯入內容</h4>
+        <button class="btn btn-outline btn-sm" onclick="resetImport()">← 重新上傳</button>
+      </div>
+
+      <div id="importSummary" style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px"></div>
+
+      <div style="overflow-x:auto">
+        <table class="data-table" id="importPreviewTable">
+          <thead>
+            <tr>
+              <th>狀態</th>
+              <th>料號</th>
+              <th>中文名稱</th>
+              <th>類別</th>
+              <th>成本</th>
+              <th>最低售價</th>
+              <th>建議報價</th>
+              <th>零售價</th>
+              <th>問題</th>
+            </tr>
+          </thead>
+          <tbody id="importPreviewBody">
+          </tbody>
+        </table>
+      </div>
+
+      <div class="modal-footer" style="padding:16px 0 0; justify-content:flex-end">
+        <button class="btn btn-outline" onclick="resetImport()">取消</button>
+        <button class="btn btn-primary" id="confirmImportBtn" onclick="confirmImport()">✅ 確認匯入</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Done -->
+    <div class="card" id="importStep3" style="display:none; text-align:center; padding:40px">
+      <div style="font-size:3rem">✅</div>
+      <h3 id="importResultMsg" style="margin:12px 0 8px; color:#2E7D32"></h3>
+      <p class="text-muted" id="importResultDetail"></p>
+      <button class="btn btn-primary" style="margin-top:16px" onclick="resetImport()">繼續匯入</button>
     </div>
   </div>
 
