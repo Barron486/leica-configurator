@@ -1,0 +1,227 @@
+/* ── Reset & Base ─────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --leica-red: #E3001B;
+  --leica-dark: #1A1A2E;
+  --leica-gray: #F5F5F7;
+  --leica-border: #DDD;
+  --admin-bg: #FFF3CD;
+  --sales-bg: #D1ECF1;
+  --customer-bg: #D4EDDA;
+  --shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+
+body { font-family: -apple-system, 'Noto Sans TC', sans-serif; background: var(--leica-gray); color: #333; font-size: 14px; }
+
+/* ── Header ──────────────────────────────── */
+header {
+  background: var(--leica-dark);
+  color: white;
+  padding: 0 24px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: var(--shadow);
+}
+header .logo { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+header .logo span { color: var(--leica-red); }
+header .user-info { display: flex; align-items: center; gap: 12px; }
+.role-badge {
+  padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
+}
+.role-admin      { background: #FFC107; color: #333; }
+.role-sales      { background: #17A2B8; color: white; }
+.role-customer   { background: #28A745; color: white; }
+.role-finance    { background: #6F42C1; color: white; }
+.role-management { background: #E67E22; color: white; }
+.role-gm         { background: #C0392B; color: white; }
+
+/* ── Layout ──────────────────────────────── */
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.two-col { display: grid; grid-template-columns: 1fr 380px; gap: 20px; align-items: start; }
+@media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+/* ── Card ────────────────────────────────── */
+.card {
+  background: white; border-radius: 10px;
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.card-header {
+  background: var(--leica-dark); color: white;
+  padding: 12px 20px; font-size: 15px; font-weight: 600;
+}
+.card-body { padding: 20px; }
+
+/* ── Product Category Section ────────────── */
+.category-section { margin-bottom: 20px; }
+.category-title {
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  color: #888; letter-spacing: 1px;
+  padding: 8px 0 6px; border-bottom: 1px solid var(--leica-border);
+  margin-bottom: 8px;
+}
+
+/* ── Product Item ────────────────────────── */
+.product-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 8px; border-radius: 6px; cursor: pointer;
+  transition: background 0.15s;
+}
+.product-item:hover { background: #F0F4FF; }
+.product-item.selected { background: #E8F0FE; border-left: 3px solid var(--leica-dark); }
+.product-item.base-item { background: #F0F8FF; border-left: 3px solid var(--leica-red); }
+.product-item input[type="checkbox"] { margin-top: 2px; accent-color: var(--leica-dark); }
+
+.product-info { flex: 1; }
+.product-name { font-weight: 600; font-size: 13px; line-height: 1.3; }
+.product-code { color: #888; font-size: 11px; font-family: monospace; margin-top: 2px; }
+.product-desc { color: #666; font-size: 12px; margin-top: 3px; line-height: 1.4; }
+.product-note { color: #E67E22; font-size: 11px; margin-top: 2px; font-style: italic; }
+
+.product-price {
+  text-align: right; white-space: nowrap; font-size: 13px;
+  min-width: 90px;
+}
+.price-retail  { color: #2E7D32; font-weight: 600; }
+.price-suggest { color: #1565C0; font-weight: 600; }
+.price-min     { color: #7B1FA2; font-size: 11px; }
+.price-cost    { color: #B71C1C; font-size: 11px; }
+.price-zero    { color: #BBB; font-size: 12px; }
+.price-label   { font-size: 10px; color: #999; margin-bottom: 1px; }
+
+/* ── Summary Panel ───────────────────────── */
+.summary-sticky { position: sticky; top: 72px; }
+.summary-table { width: 100%; border-collapse: collapse; }
+.summary-table td { padding: 6px 4px; font-size: 13px; border-bottom: 1px solid #F0F0F0; }
+.summary-table td:last-child { text-align: right; font-family: monospace; }
+.summary-table .total-row td { font-weight: 700; font-size: 15px; border-top: 2px solid var(--leica-dark); padding-top: 10px; }
+.summary-table .sub-price { font-size: 11px; color: #888; }
+
+.price-block { margin-top: 16px; padding: 12px; background: #F8F9FA; border-radius: 6px; }
+.price-block-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+.price-block-row.highlight { font-weight: 700; font-size: 15px; color: var(--leica-dark); }
+
+/* ── Buttons ─────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 20px; border: none; border-radius: 6px;
+  font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none;
+  transition: all 0.15s;
+}
+.btn-primary   { background: var(--leica-dark); color: white; }
+.btn-primary:hover { background: #2A2A4E; }
+.btn-red       { background: var(--leica-red); color: white; }
+.btn-red:hover { background: #B0001A; }
+.btn-outline   { background: white; color: var(--leica-dark); border: 2px solid var(--leica-dark); }
+.btn-outline:hover { background: var(--leica-gray); }
+.btn-success   { background: #28A745; color: white; }
+.btn-danger    { background: #DC3545; color: white; }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── Login Page ──────────────────────────── */
+.login-page {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--leica-dark) 0%, #16213E 100%);
+}
+.login-card {
+  background: white; border-radius: 12px; padding: 40px;
+  width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.login-logo { text-align: center; margin-bottom: 28px; }
+.login-logo .brand { font-size: 28px; font-weight: 900; letter-spacing: 2px; color: var(--leica-dark); }
+.login-logo .brand span { color: var(--leica-red); }
+.login-logo .subtitle { color: #888; font-size: 12px; margin-top: 4px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 6px; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 10px 12px; border: 1.5px solid var(--leica-border);
+  border-radius: 6px; font-size: 14px; transition: border 0.15s;
+}
+.form-group input:focus, .form-group select:focus { outline: none; border-color: var(--leica-dark); }
+.login-error { background: #FEE; color: #C00; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; display: none; }
+
+/* ── Admin Tabs ──────────────────────────── */
+.tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--leica-border); margin-bottom: 20px; }
+.tab-btn {
+  padding: 10px 20px; background: none; border: none; cursor: pointer;
+  font-size: 14px; color: #888; border-radius: 6px 6px 0 0;
+  transition: all 0.15s;
+}
+.tab-btn:hover { background: #F0F0F0; color: #333; }
+.tab-btn.active { background: var(--leica-dark); color: white; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── Table ───────────────────────────────── */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th { background: #F0F0F0; padding: 10px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid var(--leica-border); }
+.data-table td { padding: 10px 12px; border-bottom: 1px solid #F5F5F5; vertical-align: top; }
+.data-table tr:hover td { background: #FAFAFA; }
+
+/* ── Status badges ───────────────────────── */
+.status-badge {
+  padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; display: inline-block;
+}
+.status-draft       { background: #E9ECEF; color: #555; }
+.status-submitted   { background: #FFF3CD; color: #856404; }
+.status-approved    { background: #D4EDDA; color: #155724; }
+.status-rejected    { background: #F8D7DA; color: #721C24; }
+.status-pending_gm  { background: #F3D9FA; color: #6F2DA8; font-weight: 700; }
+
+/* ── Modal ───────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  display: none; align-items: center; justify-content: center; z-index: 1000;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: white; border-radius: 12px; width: 90%; max-width: 700px;
+  max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.modal-header {
+  padding: 20px 24px; border-bottom: 1px solid var(--leica-border);
+  display: flex; justify-content: space-between; align-items: center;
+  position: sticky; top: 0; background: white; z-index: 1;
+}
+.modal-header h3 { font-size: 16px; font-weight: 700; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #888; }
+.modal-body { padding: 24px; }
+.modal-footer { padding: 16px 24px; border-top: 1px solid var(--leica-border); display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ── Toast ───────────────────────────────── */
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: #333; color: white; padding: 12px 20px;
+  border-radius: 8px; font-size: 14px; z-index: 9999;
+  transform: translateY(100px); opacity: 0; transition: all 0.3s;
+  max-width: 320px;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { background: #28A745; }
+.toast.error   { background: #DC3545; }
+
+/* ── Quote Print ─────────────────────────── */
+@media print {
+  header, .summary-sticky, .btn, .no-print { display: none !important; }
+  .print-show { display: block !important; }
+  body { background: white; }
+  .card { box-shadow: none; }
+}
+.print-show { display: none; }
+
+/* ── Misc ────────────────────────────────── */
+.text-muted { color: #888; }
+.text-small { font-size: 12px; }
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.mt-24 { margin-top: 24px; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+.alert { padding: 10px 16px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; }
+.alert-info { background: #D1ECF1; color: #0C5460; }
+.alert-warn { background: #FFF3CD; color: #856404; }
+hr { border: none; border-top: 1px solid var(--leica-border); margin: 16px 0; }

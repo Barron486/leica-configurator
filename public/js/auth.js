@@ -1,0 +1,78 @@
+// Shared auth utilities
+
+function getToken() { return localStorage.getItem('token'); }
+function getUser()  { return JSON.parse(localStorage.getItem('user') || 'null'); }
+
+function requireAuth() {
+  const user = getUser();
+  if (!user) { window.location = '/login.html'; return null; }
+  return user;
+}
+
+function logout() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  window.location = '/login.html';
+}
+
+async function apiFetch(path, options = {}) {
+  const token = getToken();
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  if (res.status === 401) { logout(); return null; }
+  return res;
+}
+
+function formatPrice(num, currency = 'TWD') {
+  if (!num || num === 0) return '—';
+  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency, maximumFractionDigits: 0 }).format(num);
+}
+
+function showToast(msg, type = '') {
+  let t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.className = 'toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+const CATEGORY_LABELS = {
+  base:         '基礎配置',
+  orientation:  '檢體夾具固定裝置',
+  clamping:     '快速夾緊系統',
+  holder:       '檢體夾具',
+  blade_base:   '刀架底座',
+  blade_holder: '刀架 / 刀片架',
+  blade:        '刀片（耗材）',
+  cooling:      '冷卻系統',
+  lighting:     '照明與觀察裝置',
+  accessory:    '其他配件',
+};
+
+const ROLE_LABELS = {
+  admin:      '管理員',
+  sales:      '業務',
+  customer:   '客戶',
+  finance:    '財務部',
+  management: '管理部',
+  gm:         '總經理',
+};
+
+const STATUS_LABELS = {
+  draft:       '草稿',
+  submitted:   '待審核',
+  approved:    '已核准',
+  rejected:    '已退回',
+  pending_gm:  '待總經理審核',
+};

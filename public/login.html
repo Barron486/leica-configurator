@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登入 — Leica 產品配置選擇器</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="brand">LEICA<span>.</span></div>
+        <div class="subtitle">產品配置選擇器 v1.0</div>
+      </div>
+
+      <div class="login-error" id="loginError"></div>
+
+      <form id="loginForm">
+        <div class="form-group">
+          <label>帳號</label>
+          <input type="text" id="username" placeholder="請輸入帳號" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label>密碼</label>
+          <input type="password" id="password" placeholder="請輸入密碼" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%">登入</button>
+      </form>
+
+      <div class="mt-16 text-small text-muted" style="text-align:center">
+        demo: admin / sales / customer
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Redirect if already logged in
+    const token = localStorage.getItem('token');
+    if (token) {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      window.location = user.role === 'admin' ? '/admin.html' : '/index.html';
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const err = document.getElementById('loginError');
+      err.style.display = 'none';
+
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('username').value,
+          password: document.getElementById('password').value,
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        err.textContent = data.error || '登入失敗';
+        err.style.display = 'block';
+        return;
+      }
+
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      window.location = data.user.role === 'admin' ? '/admin.html' : '/index.html';
+    });
+  </script>
+</body>
+</html>

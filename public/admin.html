@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理後台 — Leica 配置選擇器</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<header>
+  <div class="logo">LEICA<span>.</span> 管理後台</div>
+  <div class="user-info">
+    <span id="userName"></span>
+    <span id="roleBadge" class="role-badge"></span>
+    <a href="/index.html" class="btn btn-outline btn-sm">配置選擇器</a>
+    <button class="btn btn-outline btn-sm" onclick="logout()">登出</button>
+  </div>
+</header>
+
+<div class="container mt-24">
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('quotes')">📋 報價管理</button>
+    <button class="tab-btn" onclick="switchTab('pricing')">💰 定價管理</button>
+    <button class="tab-btn" onclick="switchTab('products')">📦 產品管理</button>
+    <button class="tab-btn" onclick="switchTab('users')">👤 用戶管理</button>
+  </div>
+
+  <!-- Tab: Quotes -->
+  <div id="tab-quotes" class="tab-panel active">
+    <div class="flex-between" style="margin-bottom:16px">
+      <div>
+        <strong>所有報價單</strong>
+        <select id="quoteFilter" onchange="loadQuotes()" style="margin-left:12px; padding:5px 10px; border:1px solid #DDD; border-radius:4px">
+          <option value="">全部狀態</option>
+          <option value="submitted">待審核</option>
+          <option value="pending_gm">待總經理審核</option>
+          <option value="draft">草稿</option>
+          <option value="approved">已核准</option>
+          <option value="rejected">已退回</option>
+        </select>
+      </div>
+    </div>
+    <div class="card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>報價單號</th>
+            <th>客戶</th>
+            <th>單位</th>
+            <th>業務</th>
+            <th>狀態</th>
+            <th>毛利率</th>
+            <th>建立時間</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="quotesBody">
+          <tr><td colspan="7" class="text-muted">載入中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tab: Pricing -->
+  <div id="tab-pricing" class="tab-panel">
+    <div class="flex-between" style="margin-bottom:16px">
+      <strong>產品定價管理（單位：TWD）</strong>
+      <div class="text-small text-muted">⚠ 成本/最低售價/建議報價/零售價</div>
+    </div>
+    <div class="card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>料號</th>
+            <th>品名</th>
+            <th>成本</th>
+            <th>最低售價</th>
+            <th>建議報價</th>
+            <th>零售價</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="pricingBody">
+          <tr><td colspan="7" class="text-muted">載入中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tab: Products -->
+  <div id="tab-products" class="tab-panel">
+    <div class="flex-between" style="margin-bottom:16px">
+      <strong>產品清單</strong>
+      <button class="btn btn-primary btn-sm" onclick="openAddProduct()">+ 新增產品</button>
+    </div>
+    <div class="card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>料號</th>
+            <th>中文名稱</th>
+            <th>類別</th>
+            <th>狀態</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="productsBody">
+          <tr><td colspan="5" class="text-muted">載入中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tab: Users -->
+  <div id="tab-users" class="tab-panel">
+    <div class="flex-between" style="margin-bottom:16px">
+      <strong>用戶帳號管理</strong>
+      <button class="btn btn-primary btn-sm" onclick="openAddUser()">+ 新增用戶</button>
+    </div>
+    <div class="card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>帳號</th>
+            <th>顯示名稱</th>
+            <th>角色</th>
+            <th>Email</th>
+            <th>建立時間</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="usersBody">
+          <tr><td colspan="6" class="text-muted">載入中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Quote Detail Modal -->
+<div class="modal-overlay" id="quoteDetailModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="quoteDetailTitle">報價單詳情</h3>
+      <button class="modal-close" onclick="closeModal('quoteDetailModal')">✕</button>
+    </div>
+    <div class="modal-body" id="quoteDetailBody"></div>
+    <div class="modal-footer" id="quoteDetailFooter"></div>
+  </div>
+</div>
+
+<!-- Pricing Edit Modal -->
+<div class="modal-overlay" id="pricingModal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3 id="pricingModalTitle">編輯價格</h3>
+      <button class="modal-close" onclick="closeModal('pricingModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="pricing_product_id">
+      <div class="form-group"><label>成本（Cost Price）</label><input type="number" id="p_cost" min="0" step="1000"></div>
+      <div class="form-group"><label>最低售價（Min Sell Price）</label><input type="number" id="p_min" min="0" step="1000"></div>
+      <div class="form-group"><label>建議報價（Suggested Price）</label><input type="number" id="p_suggest" min="0" step="1000"></div>
+      <div class="form-group"><label>建議零售價（Retail Price）</label><input type="number" id="p_retail" min="0" step="1000"></div>
+      <div class="form-group"><label>備註</label><textarea id="p_notes" rows="2"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('pricingModal')">取消</button>
+      <button class="btn btn-primary" onclick="savePricing()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit User Modal -->
+<div class="modal-overlay" id="userModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3 id="userModalTitle">新增用戶</h3>
+      <button class="modal-close" onclick="closeModal('userModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="user_id">
+      <div class="form-group"><label>帳號</label><input type="text" id="u_username" placeholder="login name"></div>
+      <div class="form-group"><label>密碼 <span id="pwdHint" class="text-muted text-small">（留空不更改）</span></label><input type="password" id="u_password"></div>
+      <div class="form-group">
+        <label>角色</label>
+        <select id="u_role">
+          <option value="admin">管理員</option>
+          <option value="sales">業務</option>
+          <option value="customer">客戶</option>
+          <option value="finance">財務部</option>
+          <option value="management">管理部</option>
+          <option value="gm">總經理</option>
+        </select>
+      </div>
+      <div class="form-group"><label>顯示名稱</label><input type="text" id="u_display"></div>
+      <div class="form-group"><label>Email</label><input type="email" id="u_email"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('userModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveUser()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Product Modal -->
+<div class="modal-overlay" id="productModal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3>新增產品</h3>
+      <button class="modal-close" onclick="closeModal('productModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label>料號 *</label><input type="text" id="np_code" placeholder="14 0502 XXXXX"></div>
+      <div class="form-group"><label>中文名稱 *</label><input type="text" id="np_name_zh"></div>
+      <div class="form-group"><label>英文名稱</label><input type="text" id="np_name_en"></div>
+      <div class="form-group">
+        <label>類別 *</label>
+        <select id="np_category">
+          <option value="base">基礎配置</option>
+          <option value="orientation">檢體夾具固定裝置</option>
+          <option value="clamping">快速夾緊系統</option>
+          <option value="holder">檢體夾具</option>
+          <option value="blade_base">刀架底座</option>
+          <option value="blade_holder">刀架/刀片架</option>
+          <option value="blade">刀片（耗材）</option>
+          <option value="cooling">冷卻系統</option>
+          <option value="lighting">照明與觀察</option>
+          <option value="accessory">其他配件</option>
+        </select>
+      </div>
+      <div class="form-group"><label>說明</label><textarea id="np_desc" rows="2"></textarea></div>
+      <div class="form-group"><label>備註（注意事項）</label><input type="text" id="np_notes"></div>
+      <div class="form-group"><label>排序號</label><input type="number" id="np_sort" value="99"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('productModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveProduct()">新增</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="/js/auth.js"></script>
+<script src="/js/admin.js"></script>
+</body>
+</html>
