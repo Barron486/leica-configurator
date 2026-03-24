@@ -31,7 +31,18 @@ router.get('/', (req, res) => {
     ORDER BY pr.sort_order
   `).all();
 
+  // 載入所有依賴關係，附加到對應產品
+  const allDeps = db.prepare(
+    'SELECT product_id, requires_product_id, quantity FROM product_dependencies'
+  ).all();
   db.close();
+
+  // 建立 product_id → [{requires_product_id, quantity}] map
+  const depsMap = {};
+  for (const d of allDeps) {
+    if (!depsMap[d.product_id]) depsMap[d.product_id] = [];
+    depsMap[d.product_id].push({ requires_product_id: d.requires_product_id, quantity: d.quantity });
+  }
 
   // Filter price fields based on role
   const filtered = rows.map(r => {
@@ -62,6 +73,7 @@ router.get('/', (req, res) => {
       out.retail_price = r.retail_price;
     }
 
+    out.dependencies = depsMap[r.id] || [];
     return out;
   });
 

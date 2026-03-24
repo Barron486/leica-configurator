@@ -15,6 +15,7 @@ let extraSelected    = new Map(); // product_id → quantity (sales-added from D
 let customItems      = [];         // [{id, name, catalogNumber, cost, price, quantity}]
 let _nextCid         = 1;
 let requiredBomItems = new Set();  // product_id → 強制選配（不可刪除）
+let autoDeps         = new Map();  // product_id → quantity（依賴自動帶入）
 
 // ── Price helpers ─────────────────────────────────────────────
 function getPriceKey() {
@@ -56,9 +57,12 @@ function _refreshInvoiceTotal() {
   const allDbItems = [
     ...products.filter(p => selected.has(p.id)),
     ...products.filter(p => extraSelected.has(p.id)),
+    ...products.filter(p => autoDeps.has(p.id)),
   ];
   const dbTotal     = allDbItems.reduce((s, p) => {
-    const qty = selected.has(p.id) ? selected.get(p.id) : extraSelected.get(p.id);
+    const qty = selected.has(p.id) ? selected.get(p.id)
+              : extraSelected.has(p.id) ? extraSelected.get(p.id)
+              : autoDeps.get(p.id);
     return s + getEffectivePrice(p) * (qty || 1);
   }, 0);
   const customTotal = customItems.reduce((s, ci) => s + ci.price * ci.quantity, 0);
@@ -138,6 +142,7 @@ function _refreshInvoiceTotal() {
     }
   }
 
+  computeAutoDeps();
   renderProducts();
   renderSummary();
 })();
@@ -145,6 +150,7 @@ function _refreshInvoiceTotal() {
 // ── Render product list ───────────────────────────────────────
 // BOM 品項（固定）+ 額外產品（可移除）+ 自訂品項（可移除）+ 新增面板
 function renderProducts() {
+  computeAutoDeps();
   const container = document.getElementById('productList');
 
   const bomItems   = products.filter(p => selected.has(p.id));
@@ -194,6 +200,34 @@ function renderProducts() {
       </div>`;
     }
     html += `</div>`;
+  }
+
+  // ── Section 1.5: Auto-dependency items ───────────────────────
+  if (autoDeps.size > 0) {
+    const depProducts = products.filter(p => autoDeps.has(p.id));
+    if (depProducts.length > 0) {
+      html += `<div class="category-section"><div class="category-title" style="display:flex;justify-content:space-between;align-items:center"><span>自動帶入品項</span><span style="font-size:10px;font-weight:400;color:#888">依產品關聯自動帶入，不可單獨移除</span></div>`;
+      for (const p of depProducts) {
+        const qty = autoDeps.get(p.id);
+        html += `<div class="product-item selected" style="opacity:0.85;background:#F0F4FF">
+          <input type="checkbox" checked disabled title="依賴品項，自動帶入">
+          <div class="product-info">
+            <div class="product-name">${escHtml(p.name_zh)} <span style="color:#5B8DEF;font-size:10px;font-weight:600">⬡ 自動帶入</span></div>
+            <div class="product-code">${escHtml(p.catalog_number)}</div>
+            ${p.description ? `<div class="product-desc">${escHtml(p.description)}</div>` : ''}
+          </div>
+          <div class="product-price">
+            ${renderPriceColumn(p)}
+            <div class="qty-stepper" onclick="event.stopPropagation()">
+              <button class="qty-btn" disabled style="opacity:0.4">−</button>
+              <span class="qty-val">${qty}</span>
+              <button class="qty-btn" disabled style="opacity:0.4">+</button>
+            </div>
+          </div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
   }
 
   // ── Section 2: Extra items from DB (removable) ────────────────
@@ -309,6 +343,24 @@ function renderPriceColumn(p) {
     return p.retail_price > 0
       ? `<div class="price-retail" style="font-size:14px">${fmt(p.retail_price)}</div>`
       : '';
+  }
+}
+
+// ── 依賴解析 ──────────────────────────────────────────────────
+// 遍歷所有已選產品（BOM + extra），收集其 dependencies
+// 排除已在 selected / extraSelected 中的項目（不重複帶入）
+function computeAutoDeps() {
+  autoDeps = new Map();
+  const allSelected = [...selected.keys(), ...extraSelected.keys()];
+  for (const id of allSelected) {
+    const p = products.find(x => x.id === id);
+    if (!p?.dependencies?.length) continue;
+    for (const dep of p.dependencies) {
+      const rid = dep.requires_product_id;
+      if (selected.has(rid) || extraSelected.has(rid)) continue; // 已在清單中
+      // 取最大 quantity（多個父項都依賴同一個時）
+      autoDeps.set(rid, Math.max(autoDeps.get(rid) || 0, dep.quantity));
+    }
   }
 }
 
@@ -906,6 +958,7 @@ async function submitQuote() {
   const productItems = [
     ...[...selected.entries()].map(([id, qty]) => ({ product_id: id, quantity: qty })),
     ...[...extraSelected.entries()].map(([id, qty]) => ({ product_id: id, quantity: qty })),
+    ...[...autoDeps.entries()].map(([id, qty]) => ({ product_id: id, quantity: qty })),
   ];
   const customItemsPayload = customItems.map(ci => ({
     custom_name:           ci.name,

@@ -324,11 +324,12 @@ async function loadProducts() {
           ${p.active ? '啟用' : '停用'}
         </span>
       </td>
-      <td style="display:flex; gap:6px">
+      <td style="display:flex; gap:6px; flex-wrap:wrap">
         <button class="btn btn-outline btn-sm" onclick="openEditProduct(${p.id}, '${escapeJs(p.catalog_number)}', '${escapeJs(p.name_zh)}', '${escapeJs(p.name_en||'')}', '${p.category}', '${escapeJs(p.description||'')}', '${escapeJs(p.notes||'')}', ${p.sort_order??99}, ${p.pm_user_id||'null'})">編輯</button>
         <button class="btn btn-outline btn-sm" onclick="toggleProduct(${p.id}, ${p.active})">
           ${p.active ? '停用' : '啟用'}
         </button>
+        <button class="btn btn-outline btn-sm" onclick="openDepModal(${p.id}, '${escapeJs(p.name_zh)}')">關聯</button>
       </td>
     </tr>
   `).join('');
@@ -1142,4 +1143,71 @@ async function exportProductsExcel() {
   a.download = `products_${new Date().toISOString().slice(0,10)}.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ── Product Dependencies ───────────────────────────────────────
+let _depProductId = null;
+
+async function openDepModal(productId, productName) {
+  _depProductId = productId;
+  document.getElementById('depModalTitle').textContent = `產品關聯：${productName}`;
+
+  // 預載所有產品到下拉（排除自身）
+  if (!_allProducts.length) {
+    const pr = await apiFetch('/api/admin/products');
+    if (pr && pr.ok) _allProducts = await pr.json();
+  }
+  document.getElementById('dep_product_select').innerHTML =
+    '<option value="">— 選擇產品 —</option>' +
+    _allProducts.filter(p => p.active && p.id !== productId).map(p =>
+      `<option value="${p.id}">[${p.catalog_number}] ${p.name_zh}</option>`
+    ).join('');
+
+  document.getElementById('depModal').classList.add('open');
+  await renderDeps();
+}
+
+async function renderDeps() {
+  const res = await apiFetch(`/api/admin/products/${_depProductId}/dependencies`);
+  if (!res || !res.ok) return;
+  const rows = await res.json();
+  const tbody = document.getElementById('depBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="text-muted">尚無關聯</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td class="text-small">${r.catalog_number}</td>
+      <td>${r.name_zh}</td>
+      <td style="text-align:center">${r.quantity}</td>
+      <td><button class="btn btn-outline btn-sm" style="color:#DC3545;border-color:#DC3545" onclick="removeDependency(${r.id})">移除</button></td>
+    </tr>
+  `).join('');
+}
+
+async function addDependency() {
+  const reqId = document.getElementById('dep_product_select').value;
+  const qty   = parseInt(document.getElementById('dep_qty').value) || 1;
+  if (!reqId) { showToast('請選擇關聯產品', 'error'); return; }
+  const res = await apiFetch(`/api/admin/products/${_depProductId}/dependencies`, {
+    method: 'POST',
+    body: JSON.stringify({ requires_product_id: reqId, quantity: qty }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json();
+    showToast(err?.error || '加入失敗', 'error');
+    return;
+  }
+  document.getElementById('dep_product_select').value = '';
+  document.getElementById('dep_qty').value = '1';
+  showToast('已加入關聯', 'success');
+  await renderDeps();
+}
+
+async function removeDependency(depId) {
+  const res = await apiFetch(`/api/admin/products/${_depProductId}/dependencies/${depId}`, { method: 'DELETE' });
+  if (!res || !res.ok) { showToast('移除失敗', 'error'); return; }
+  showToast('已移除', 'success');
+  await renderDeps();
 }

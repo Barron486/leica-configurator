@@ -156,6 +156,14 @@ function initSchema() {
       manage_quotes INTEGER DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS product_dependencies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      requires_product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      quantity INTEGER DEFAULT 1,
+      UNIQUE(product_id, requires_product_id)
+    );
+
     CREATE TABLE IF NOT EXISTS api_settings (
       key TEXT PRIMARY KEY,
       value TEXT DEFAULT '',
@@ -454,6 +462,18 @@ function _migrate(db) {
         console.log('Migration 15: quote_items supports custom items');
       }
     } catch(e) { console.error('Migration 15 error:', e.message); }
+
+    // 18. product_dependencies 表（舊 DB 補建）
+    try {
+      db.exec(`CREATE TABLE IF NOT EXISTS product_dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        requires_product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        quantity INTEGER DEFAULT 1,
+        UNIQUE(product_id, requires_product_id)
+      )`);
+      console.log('Migration 18: product_dependencies table ready');
+    } catch(e) { console.error('Migration 18 error:', e.message); }
 
     // 17. bom_items: 加入 required 欄位（強制選配）
     try {

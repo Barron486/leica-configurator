@@ -359,6 +359,48 @@ router.get('/export/products', adminOnly, (req, res) => {
   res.send(buf);
 });
 
+// ── Product Dependencies ──────────────────────────────────────
+router.get('/products/:id/dependencies', perm('manage_products'), (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT pd.id, pd.requires_product_id, pd.quantity,
+      p.catalog_number, p.name_zh
+    FROM product_dependencies pd
+    JOIN products p ON p.id = pd.requires_product_id
+    WHERE pd.product_id = ?
+    ORDER BY p.sort_order, p.catalog_number
+  `).all(req.params.id);
+  db.close();
+  res.json(rows);
+});
+
+router.post('/products/:id/dependencies', perm('manage_products'), (req, res) => {
+  const { requires_product_id, quantity } = req.body;
+  if (!requires_product_id) return res.status(400).json({ error: '缺少關聯產品' });
+  if (parseInt(requires_product_id) === parseInt(req.params.id))
+    return res.status(400).json({ error: '不可關聯自身' });
+  const db = getDb();
+  try {
+    const result = db.prepare(
+      'INSERT INTO product_dependencies (product_id, requires_product_id, quantity) VALUES (?,?,?)'
+    ).run(req.params.id, requires_product_id, quantity || 1);
+    db.close();
+    res.status(201).json({ id: result.lastInsertRowid });
+  } catch(e) {
+    db.close();
+    if (e.message.includes('UNIQUE')) return res.status(400).json({ error: '此關聯已存在' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/products/:id/dependencies/:depId', perm('manage_products'), (req, res) => {
+  const db = getDb();
+  db.prepare('DELETE FROM product_dependencies WHERE id=? AND product_id=?')
+    .run(req.params.depId, req.params.id);
+  db.close();
+  res.json({ message: '已移除' });
+});
+
 // ── API Settings (super_admin only) ──────────────────────────
 router.get('/api-settings', superAdminOnly, (req, res) => {
   const db = getDb();
