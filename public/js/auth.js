@@ -80,3 +80,33 @@ const STATUS_LABELS = {
   approved:    '已核准',
   rejected:    '已退回',
 };
+
+// ── 通知相關 ──────────────────────────────────────────────────
+async function loadNotifications() {
+  const res = await apiFetch('/api/notifications');
+  if (!res || !res.ok) return;
+  const data = await res.json();
+  const badge = document.getElementById('notifBadge');
+  if (badge) {
+    if (data.unread > 0) {
+      badge.textContent = data.unread > 9 ? '9+' : data.unread;
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  return data;
+}
+
+function toggleNotifPanel() {
+  // 簡易實作：點鈴鐺時標全部已讀並更新 badge
+  apiFetch('/api/notifications/read-all', { method: 'PUT' }).then(() => {
+    const badge = document.getElementById('notifBadge');
+    if (badge) badge.style.display = 'none';
+  });
+}
+
+// 每 30 秒輪詢一次通知
+setInterval(() => {
+  if (document.getElementById('notifBadge')) loadNotifications();
+}, 30000);

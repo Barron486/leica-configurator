@@ -350,6 +350,30 @@ function _migrate(db) {
       }
     } catch(e) { console.error('Migration 9 error:', e.message); }
 
+    // 10. quotes: 加入 case_notes 欄位
+    try {
+      const qCols = db.prepare("PRAGMA table_info(quotes)").all().map(c => c.name);
+      if (!qCols.includes('case_notes')) {
+        db.exec("ALTER TABLE quotes ADD COLUMN case_notes TEXT DEFAULT ''");
+        console.log('Migration 10: added quotes.case_notes');
+      }
+    } catch(e) { console.error('Migration 10 error:', e.message); }
+
+    // 11. 建立 notifications 表
+    try {
+      db.exec(`CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT DEFAULT '',
+        link TEXT DEFAULT '',
+        read INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`);
+      console.log('Migration 11: created notifications table');
+    } catch(e) { console.error('Migration 11 error:', e.message); }
+
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }

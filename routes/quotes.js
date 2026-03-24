@@ -1,7 +1,33 @@
 const express = require('express');
 const { getDb } = require('../database/schema');
+const nodemailer = require('nodemailer');
 
 const router = express.Router();
+
+function createNotification(db, userId, type, title, body, link) {
+  try {
+    db.prepare('INSERT INTO notifications (user_id, type, title, body, link) VALUES (?,?,?,?,?)')
+      .run(userId, type, title, body, link || '');
+  } catch(e) { console.error('createNotification error:', e.message); }
+}
+
+async function sendEmail(to, subject, text) {
+  if (!process.env.SMTP_HOST || !to) return;
+  try {
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to,
+      subject,
+      text,
+    });
+  } catch(e) { console.error('sendEmail error:', e.message); }
+}
 
 function generateQuoteNumber(db, prefix) {
   const now = new Date();
@@ -82,6 +108,21 @@ router.get('/', (req, res) => {
   res.json(rows);
 });
 
+// 業務端：取得自己的報價單
+router.get('/my', (req, res) => {
+  const { id: userId } = req.user;
+  const db = getDb();
+  const quotes = db.prepare(`
+    SELECT q.*, u.display_name AS sales_name
+    FROM quotes q
+    LEFT JOIN users u ON u.id = q.sales_user_id
+    WHERE q.sales_user_id = ?
+    ORDER BY q.created_at DESC
+  `).all(userId);
+  db.close();
+  res.json(quotes);
+});
+
 // Get quote detail with items
 router.get('/:id', (req, res) => {
   const { role, id: userId } = req.user;
@@ -149,8 +190,9 @@ router.post('/', (req, res) => {
 });
 
 // Submit quote
-router.put('/:id/submit', (req, res) => {
+router.put('/:id/submit', async (req, res) => {
   const { id: userId } = req.user;
+  const { case_notes } = req.body;
   const db = getDb();
 
   const quote = db.prepare('SELECT * FROM quotes WHERE id = ?').get(req.params.id);
@@ -169,8 +211,37 @@ router.put('/:id/submit', (req, res) => {
 
   const newStatus = pmUser ? 'pending_pm' : 'submitted';
 
-  db.prepare('UPDATE quotes SET status=?, submitted_at=CURRENT_TIMESTAMP WHERE id=?').run(newStatus, req.params.id);
+  db.prepare('UPDATE quotes SET status=?, submitted_at=CURRENT_TIMESTAMP, case_notes=? WHERE id=?')
+    .run(newStatus, case_notes || '', req.params.id);
+
+  // 通知審批人員
+  const salesUser = db.prepare('SELECT display_name FROM users WHERE id=?').get(quote.sales_user_id);
+  const salesName = salesUser?.display_name || '業務';
+  const notifTitle = `新報價單待審核：${quote.quote_number}`;
+  const notifBody = `${salesName} 提交了報價單 ${quote.quote_number}，客戶：${quote.customer_name}。${case_notes ? '案件說明：' + case_notes : ''}`;
+
+  let approvers = [];
+  if (newStatus === 'pending_pm' && pmUser) {
+    approvers = [db.prepare('SELECT id, email, display_name FROM users WHERE id=?').get(pmUser.pm_user_id)].filter(Boolean);
+  } else {
+    // 通知審批鏈所有成員
+    approvers = db.prepare(`
+      SELECT u.id, u.email, u.display_name FROM approval_chain ac
+      JOIN users u ON u.id = ac.user_id ORDER BY ac.step_order
+    `).all();
+  }
+
+  for (const ap of approvers) {
+    createNotification(db, ap.id, 'quote_submitted', notifTitle, notifBody, '/admin.html');
+  }
+
   db.close();
+
+  // 非同步發送 email（不阻塞回應）
+  for (const ap of approvers) {
+    sendEmail(ap.email, `[Leica] ${notifTitle}`, notifBody).catch(() => {});
+  }
+
   const msg = pmUser ? '報價單已提交，待 PM 審核' : '報價單已提交，待管理部審核';
   res.json({ message: msg, status: newStatus });
 });
@@ -203,7 +274,20 @@ router.put('/:id/approve', (req, res) => {
 
   db.prepare("UPDATE quotes SET status=?, admin_notes=?, reviewer_role=?, reviewed_at=CURRENT_TIMESTAMP WHERE id=?")
     .run(nextStatus, admin_notes || '', role, req.params.id);
-  db.close();
+
+  // 通知業務
+  const salesUser2 = db.prepare('SELECT id, email, display_name FROM users WHERE id=?').get(quote.sales_user_id);
+  if (salesUser2) {
+    const statusLabels = { pending_gm:'轉請總經理審核', submitted:'已核准，待管理部用印', approved:'報價單已核准！' };
+    const nTitle = `報價單 ${quote.quote_number} ${statusLabels[nextStatus] || '已更新'}`;
+    const nBody = `您的報價單 ${quote.quote_number}（${quote.customer_name}）已被核准。${admin_notes ? '備註：' + admin_notes : ''}`;
+    createNotification(db, salesUser2.id, 'quote_approved', nTitle, nBody, '/quotes.html');
+    db.close();
+    sendEmail(salesUser2.email, `[Leica] ${nTitle}`, nBody).catch(() => {});
+  } else {
+    db.close();
+  }
+
   const msgs = { pending_gm:'PM 已核准，報價單需總經理審核', submitted:'已核准，待管理部用印', approved:'報價單已核准' };
   res.json({ message: msgs[nextStatus] || '已核准', status: nextStatus });
 });
@@ -218,8 +302,35 @@ router.put('/:id/reject', (req, res) => {
   if (!canReview(db, userId, role, quote)) { db.close(); return res.status(403).json({ error: '無審核權限' }); }
   db.prepare("UPDATE quotes SET status='rejected', admin_notes=?, reviewer_role=?, reviewed_at=CURRENT_TIMESTAMP WHERE id=?")
     .run(admin_notes || '', role, req.params.id);
-  db.close();
+
+  // 通知業務
+  const salesReject = db.prepare('SELECT id, email FROM users WHERE id=?').get(quote.sales_user_id);
+  if (salesReject) {
+    const rTitle = `報價單 ${quote.quote_number} 已退回`;
+    const rBody = `您的報價單 ${quote.quote_number}（${quote.customer_name}）已被退回。${admin_notes ? '退回原因：' + admin_notes : ''}`;
+    createNotification(db, salesReject.id, 'quote_rejected', rTitle, rBody, '/quotes.html');
+    db.close();
+    sendEmail(salesReject.email, `[Leica] ${rTitle}`, rBody).catch(() => {});
+  } else {
+    db.close();
+  }
+
   res.json({ message: '報價單已退回' });
+});
+
+// 刪除報價單（管理員可刪任何，業務只能刪自己的草稿）
+router.delete('/:id', (req, res) => {
+  const { role, id: userId } = req.user;
+  const db = getDb();
+  const quote = db.prepare('SELECT * FROM quotes WHERE id=?').get(req.params.id);
+  if (!quote) { db.close(); return res.status(404).json({ error: '報價單不存在' }); }
+  const isAdmin = ['admin','super_admin'].includes(role);
+  if (!isAdmin && (quote.sales_user_id !== userId || quote.status !== 'draft')) {
+    db.close(); return res.status(403).json({ error: '只能刪除自己的草稿報價單' });
+  }
+  db.prepare('DELETE FROM quotes WHERE id=?').run(req.params.id);
+  db.close();
+  res.json({ message: '已刪除' });
 });
 
 module.exports = router;

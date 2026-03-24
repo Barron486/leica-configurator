@@ -16,6 +16,12 @@ let _currentUser = null;
   badge.textContent = ROLE_LABELS[user.role] || user.role;
   badge.className = `role-badge role-${user.role}`;
 
+  // 顯示「我的報價單」連結（非 customer/demo）
+  const mqLink = document.getElementById('myQuotesLink');
+  if (mqLink && !['customer','demo'].includes(user.role)) mqLink.style.display = 'block';
+
+  loadNotifications();
+
   // 非 admin 隱藏管理類 tabs
   if (!ADMIN_ONLY_ROLES.includes(user.role)) {
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -116,6 +122,7 @@ async function openQuoteDetail(id) {
       <div><strong>建立：</strong>${formatDate(q.created_at)}</div>
       <div><strong>提交：</strong>${q.submitted_at ? formatDate(q.submitted_at) : '—'}</div>
     </div>
+    ${q.case_notes ? `<div style="background:#F0F4FF;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px"><strong>案件說明：</strong>${q.case_notes}</div>` : ''}
     ${isPendingGm ? `<div class="alert" style="background:#FFF3CD;color:#856404;margin-bottom:12px;border-left:4px solid #FFC107">⚠ 此報價單包含低於最低售價的品項，需總經理審核</div>` : ''}
     <table class="data-table" style="margin-bottom:12px">
       <thead><tr><th>料號</th><th>品名</th><th>數量</th><th>單價</th></tr></thead>
@@ -137,7 +144,7 @@ async function openQuoteDetail(id) {
     const notesInput = document.createElement('input');
     notesInput.type = 'text';
     notesInput.id = 'adminNotes';
-    notesInput.placeholder = '備註（可選）';
+    notesInput.placeholder = '備註（退回時必填）';
     notesInput.style.cssText = 'flex:1; padding:8px 12px; border:1px solid #DDD; border-radius:4px; font-size:13px';
 
     const closeBtn = document.createElement('button');
@@ -165,11 +172,26 @@ async function openQuoteDetail(id) {
     footer.innerHTML = `<button class="btn btn-outline" onclick="closeModal('quoteDetailModal')">關閉</button>`;
   }
 
+  // 管理員可刪除報價單
+  if (ADMIN_ONLY_ROLES.includes(_currentUser?.role)) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-outline';
+    delBtn.style.cssText = 'color:#DC3545; border-color:#DC3545; margin-left:auto';
+    delBtn.textContent = '刪除';
+    delBtn.onclick = () => deleteQuoteAdmin(q.id, q.quote_number);
+    footer.appendChild(delBtn);
+  }
+
   document.getElementById('quoteDetailModal').classList.add('open');
 }
 
 async function reviewQuote(id, action) {
   const notes = document.getElementById('adminNotes')?.value || '';
+  if (action === 'rejected' && !notes.trim()) {
+    showToast('退回時請填寫備註原因', 'error');
+    document.getElementById('adminNotes')?.focus();
+    return;
+  }
   const endpoint = action === 'approved' ? 'approve' : 'reject';
   const res = await apiFetch(`/api/quotes/${id}/${endpoint}`, {
     method: 'PUT',
@@ -178,6 +200,15 @@ async function reviewQuote(id, action) {
   if (!res || !res.ok) { showToast('操作失敗', 'error'); return; }
   closeModal('quoteDetailModal');
   showToast(action === 'approved' ? '已核准' : '已退回', 'success');
+  loadQuotes();
+}
+
+async function deleteQuoteAdmin(id, num) {
+  if (!confirm(`確定刪除報價單「${num}」？此操作無法復原。`)) return;
+  const res = await apiFetch(`/api/quotes/${id}`, { method: 'DELETE' });
+  if (!res || !res.ok) { showToast('刪除失敗', 'error'); return; }
+  closeModal('quoteDetailModal');
+  showToast('已刪除', 'success');
   loadQuotes();
 }
 

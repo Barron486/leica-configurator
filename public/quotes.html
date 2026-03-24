@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的報價單 — Leica 配置選擇器</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="app-shell">
+
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo">LEICA<span>.</span></div>
+      <div class="sidebar-logo-sub">Biosystems</div>
+    </div>
+    <div class="sidebar-nav">
+      <div class="sidebar-section-label">Navigation</div>
+      <a href="/products.html" class="sidebar-link"><span class="sidebar-link-icon">📦</span>產品目錄</a>
+      <a href="/index.html" class="sidebar-link"><span class="sidebar-link-icon">⚙</span>配置報價</a>
+      <a href="/quotes.html" class="sidebar-link active"><span class="sidebar-link-icon">📄</span>我的報價單</a>
+      <div id="adminLink" style="display:none">
+        <a href="/admin.html" class="sidebar-link"><span class="sidebar-link-icon">⚡</span>管理後台</a>
+      </div>
+    </div>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-user">
+      <span id="userName" class="sidebar-username"></span>
+      <span id="roleBadge" class="role-badge"></span>
+      <button class="sidebar-logout" onclick="logout()">登出</button>
+    </div>
+  </nav>
+
+  <div class="main-area">
+    <div class="main-topbar">
+      <div style="display:flex; align-items:baseline; gap:10px">
+        <span class="main-topbar-title">我的報價單</span>
+        <span class="main-topbar-sub">My Quotes</span>
+      </div>
+      <button id="notifBtn" onclick="toggleNotifPanel()" style="position:relative; background:none; border:none; cursor:pointer; font-size:18px; padding:4px 8px">
+        🔔<span id="notifBadge" style="display:none; position:absolute; top:0; right:0; background:#DC3545; color:white; border-radius:50%; width:16px; height:16px; font-size:10px; line-height:16px; text-align:center"></span>
+      </button>
+    </div>
+    <div class="main-content">
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('pending', event)">⏳ 待審批</button>
+        <button class="tab-btn" onclick="switchTab('done', event)">✅ 已完成</button>
+        <button class="tab-btn" onclick="switchTab('draft', event)">📝 草稿</button>
+        <button class="tab-btn" onclick="switchTab('all', event)">📋 全部</button>
+      </div>
+
+      <div id="tab-pending" class="tab-panel active">
+        <div id="list-pending" class="quotes-list"></div>
+      </div>
+      <div id="tab-done" class="tab-panel">
+        <div id="list-done" class="quotes-list"></div>
+      </div>
+      <div id="tab-draft" class="tab-panel">
+        <div id="list-draft" class="quotes-list"></div>
+      </div>
+      <div id="tab-all" class="tab-panel">
+        <div id="list-all" class="quotes-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- Quote Detail Modal -->
+<div id="quoteModal" class="modal-overlay">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-header">
+      <span id="quoteModalTitle">報價單詳情</span>
+      <button class="modal-close" onclick="closeModal('quoteModal')">✕</button>
+    </div>
+    <div class="modal-body" id="quoteModalBody"></div>
+    <div class="modal-footer" id="quoteModalFooter">
+      <button class="btn btn-outline" onclick="closeModal('quoteModal')">關閉</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/auth.js"></script>
+<script>
+let _currentTab = 'pending';
+let _quotes = [];
+
+(async function init() {
+  const user = requireAuth();
+  if (!user) return;
+  document.getElementById('userName').textContent = user.display_name;
+  const badge = document.getElementById('roleBadge');
+  badge.textContent = ROLE_LABELS[user.role] || user.role;
+  badge.className = `role-badge role-${user.role}`;
+  if (['admin','super_admin'].includes(user.role)) document.getElementById('adminLink').style.display = 'block';
+  await loadQuotes();
+  loadNotifications();
+})();
+
+function switchTab(name, e) {
+  _currentTab = name;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  if (e && e.currentTarget) e.currentTarget.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  renderTab(name);
+}
+
+async function loadQuotes() {
+  const res = await apiFetch('/api/quotes/my');
+  if (!res || !res.ok) return;
+  _quotes = await res.json();
+  renderTab(_currentTab);
+}
+
+function renderTab(name) {
+  const PENDING = ['pending_pm','pending_gm','submitted'];
+  const DONE    = ['approved','rejected'];
+  let list;
+  if (name === 'pending') list = _quotes.filter(q => PENDING.includes(q.status));
+  else if (name === 'done') list = _quotes.filter(q => DONE.includes(q.status));
+  else if (name === 'draft') list = _quotes.filter(q => q.status === 'draft');
+  else list = _quotes;
+
+  const el = document.getElementById('list-' + name);
+  if (!list.length) {
+    el.innerHTML = '<div class="card" style="padding:32px; text-align:center; color:#999">無報價單</div>';
+    return;
+  }
+  el.innerHTML = list.map(q => {
+    const isPending = PENDING.includes(q.status);
+    const isRejected = q.status === 'rejected';
+    return `
+    <div class="card" style="margin-bottom:12px; cursor:pointer" onclick="openQuote(${q.id})">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; padding:16px">
+        <div>
+          <div style="font-weight:700; font-size:15px; margin-bottom:4px">${q.quote_number}</div>
+          <div style="font-size:13px; color:#555">${q.customer_name}${q.customer_org ? ' · ' + q.customer_org : ''}</div>
+          ${q.case_notes ? `<div style="font-size:12px; color:#888; margin-top:4px">📋 ${q.case_notes}</div>` : ''}
+        </div>
+        <div style="text-align:right">
+          <span class="status-badge status-${q.status}">${STATUS_LABELS[q.status] || q.status}</span>
+          <div style="font-size:11px; color:#AAA; margin-top:4px">${formatDateShort(q.created_at)}</div>
+        </div>
+      </div>
+      ${isRejected && q.admin_notes ? `<div style="padding:0 16px 12px; font-size:12px; color:#DC3545">退回原因：${q.admin_notes}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function openQuote(id) {
+  const q = _quotes.find(x => x.id === id);
+  if (!q) return;
+  document.getElementById('quoteModalTitle').textContent = `報價單 ${q.quote_number}`;
+
+  const res = await apiFetch(`/api/quotes/${id}`);
+  if (!res || !res.ok) return;
+  const detail = await res.json();
+
+  const total = detail.items.reduce((s, it) => s + it.unit_price_snapshot * it.quantity, 0);
+  document.getElementById('quoteModalBody').innerHTML = `
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px; margin-bottom:16px">
+      <div><strong>客戶：</strong>${detail.customer_name}</div>
+      <div><strong>單位：</strong>${detail.customer_org || '—'}</div>
+      <div><strong>電話：</strong>${detail.customer_phone || '—'}</div>
+      <div><strong>Email：</strong>${detail.customer_email || '—'}</div>
+      <div><strong>狀態：</strong><span class="status-badge status-${detail.status}">${STATUS_LABELS[detail.status]||detail.status}</span></div>
+      <div><strong>建立：</strong>${formatDateShort(detail.created_at)}</div>
+    </div>
+    ${detail.case_notes ? `<div style="background:#F8F9FA;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px"><strong>案件說明：</strong>${detail.case_notes}</div>` : ''}
+    ${detail.admin_notes ? `<div style="background:${detail.status==='rejected'?'#FFF5F5':'#F8F9FA'};border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:${detail.status==='rejected'?'#DC3545':'inherit'}"><strong>${detail.status==='rejected'?'退回原因':'審核備註'}：</strong>${detail.admin_notes}</div>` : ''}
+    <table class="data-table">
+      <thead><tr><th>料號</th><th>品名</th><th>數量</th><th style="text-align:right">單價</th></tr></thead>
+      <tbody>
+        ${detail.items.map(it => `
+          <tr>
+            <td class="text-small">${it.catalog_number}</td>
+            <td>${it.name_zh}</td>
+            <td style="text-align:center">${it.quantity}</td>
+            <td style="text-align:right">${it.unit_price_snapshot > 0 ? formatPrice(it.unit_price_snapshot) : '洽詢'}</td>
+          </tr>
+        `).join('')}
+        <tr style="font-weight:700; background:#F5F5F7">
+          <td colspan="3" style="text-align:right">合計</td>
+          <td style="text-align:right">${total > 0 ? formatPrice(total) : '洽詢'}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+
+  const footer = document.getElementById('quoteModalFooter');
+  footer.innerHTML = '';
+  // 草稿可刪除
+  if (detail.status === 'draft') {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-outline';
+    delBtn.style.color = '#DC3545';
+    delBtn.style.borderColor = '#DC3545';
+    delBtn.textContent = '刪除草稿';
+    delBtn.onclick = () => deleteQuote(id, detail.quote_number);
+    footer.appendChild(delBtn);
+  }
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'btn btn-outline';
+  closeBtn.textContent = '關閉';
+  closeBtn.onclick = () => closeModal('quoteModal');
+  footer.appendChild(closeBtn);
+
+  document.getElementById('quoteModal').classList.add('open');
+}
+
+async function deleteQuote(id, num) {
+  if (!confirm(`確定刪除草稿「${num}」？`)) return;
+  const res = await apiFetch(`/api/quotes/${id}`, { method: 'DELETE' });
+  if (!res || !res.ok) { showToast('刪除失敗', 'error'); return; }
+  closeModal('quoteModal');
+  showToast('已刪除', 'success');
+  await loadQuotes();
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function formatDateShort(str) {
+  if (!str) return '—';
+  return new Date(str).toLocaleDateString('zh-TW', { month:'2-digit', day:'2-digit', year:'numeric' });
+}
+</script>
+</body>
+</html>

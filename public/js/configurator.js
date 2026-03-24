@@ -62,7 +62,13 @@ function _refreshInvoiceTotal() {
   badge.className = `role-badge role-${user.role}`;
 
   // Admin link
-  if (user.role === 'admin') document.getElementById('adminLink').style.display = 'block';
+  if (['admin','super_admin'].includes(user.role)) document.getElementById('adminLink').style.display = 'block';
+
+  // 我的報價單連結（非 customer/demo）
+  const mqLink = document.getElementById('myQuotesLink');
+  if (mqLink && !['customer','demo'].includes(user.role)) mqLink.style.display = 'block';
+
+  loadNotifications();
 
   // Role alert
   const alert = document.getElementById('roleAlert');
@@ -662,7 +668,11 @@ async function submitQuote() {
   }
 
   const data = await res.json();
-  await apiFetch(`/api/quotes/${data.id}/submit`, { method: 'PUT' });
+  const case_notes = document.getElementById('case_notes')?.value?.trim() || '';
+  await apiFetch(`/api/quotes/${data.id}/submit`, {
+    method: 'PUT',
+    body: JSON.stringify({ case_notes }),
+  });
 
   _lastQuoteNumber = data.quote_number;
   closeModal('quoteModal');

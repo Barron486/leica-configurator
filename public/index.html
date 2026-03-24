@@ -26,6 +26,9 @@
       <a href="/index.html" class="sidebar-link active">
         <span class="sidebar-link-icon">⚙</span>配置報價
       </a>
+      <a href="/quotes.html" class="sidebar-link" id="myQuotesLink" style="display:none">
+        <span class="sidebar-link-icon">📄</span>我的報價單
+      </a>
       <div id="adminLink" style="display:none">
         <a href="/admin.html" class="sidebar-link">
           <span class="sidebar-link-icon">⚡</span>管理後台
@@ -48,6 +51,9 @@
         <span class="main-topbar-title">HistoCore MULTICUT 配置選擇器</span>
         <span class="main-topbar-sub">Rotary Microtome</span>
       </div>
+      <button id="notifBtn" onclick="toggleNotifPanel()" style="position:relative; background:none; border:none; cursor:pointer; font-size:18px; padding:4px 8px">
+        🔔<span id="notifBadge" style="display:none; position:absolute; top:0; right:0; background:#DC3545; color:white; border-radius:50%; width:16px; height:16px; font-size:10px; line-height:16px; text-align:center"></span>
+      </button>
     </div>
 
     <div class="main-content">
@@ -123,6 +129,10 @@
           <div class="form-group" style="margin:0">
             <label>估價單效期（天）</label>
             <input type="number" id="quote_valid_days" value="30" min="1" max="365" style="width:100px" oninput="renderInvoice()">
+          </div>
+          <div class="form-group" style="margin:0; grid-column:1/-1">
+            <label>案件說明 <span class="text-muted text-small">（提交審核時附上，讓審批人員了解背景）</span></label>
+            <textarea id="case_notes" rows="2" placeholder="例：醫院年度採購計畫、競標案、替換舊機型…"></textarea>
           </div>
           <div class="form-group" style="margin:0; grid-column:1/-1">
             <label>自訂備註</label>
