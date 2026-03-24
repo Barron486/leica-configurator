@@ -166,12 +166,13 @@
             <th>顯示名稱</th>
             <th>角色</th>
             <th>Email</th>
+            <th>字軌</th>
             <th>建立時間</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody id="usersBody">
-          <tr><td colspan="6" class="text-muted">載入中…</td></tr>
+          <tr><td colspan="7" class="text-muted">載入中…</td></tr>
         </tbody>
       </table>
     </div>
@@ -373,6 +374,10 @@
       </div>
       <div class="form-group"><label>顯示名稱</label><input type="text" id="u_display"></div>
       <div class="form-group"><label>Email</label><input type="email" id="u_email"></div>
+      <div class="form-group">
+        <label>估價單字軌 <span class="text-muted text-small">（英數，用於報價編號前綴）</span></label>
+        <input type="text" id="u_quote_prefix" placeholder="例如：NTU、NTP" style="text-transform:uppercase" maxlength="10">
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('userModal')">取消</button>

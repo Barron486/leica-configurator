@@ -359,8 +359,9 @@ async function loadUsers() {
       <td>${u.display_name || '—'}</td>
       <td><span class="role-badge role-${u.role}">${ROLE_LABELS[u.role] || u.role}</span></td>
       <td class="text-small text-muted">${u.email || '—'}</td>
+      <td class="text-small" style="font-family:var(--font-mono);font-size:11px;color:#555">${u.quote_prefix || '—'}</td>
       <td class="text-small text-muted">${formatDate(u.created_at)}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="openEditUser(${u.id}, '${escapeJs(u.username)}', '${u.role}', '${escapeJs(u.display_name||'')}', '${escapeJs(u.email||'')}')">編輯</button></td>
+      <td><button class="btn btn-outline btn-sm" onclick="openEditUser(${u.id}, '${escapeJs(u.username)}', '${u.role}', '${escapeJs(u.display_name||'')}', '${escapeJs(u.email||'')}', '${escapeJs(u.quote_prefix||'')}')">編輯</button></td>
     </tr>
   `).join('');
 }
@@ -369,12 +370,12 @@ function openAddUser() {
   document.getElementById('userModalTitle').textContent = '新增用戶';
   document.getElementById('user_id').value = '';
   document.getElementById('pwdHint').style.display = 'none';
-  ['u_username','u_password','u_display','u_email'].forEach(id => document.getElementById(id).value = '');
+  ['u_username','u_password','u_display','u_email','u_quote_prefix'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('u_role').value = 'sales';
   document.getElementById('userModal').classList.add('open');
 }
 
-function openEditUser(id, username, role, display, email) {
+function openEditUser(id, username, role, display, email, quotePrefix = '') {
   document.getElementById('userModalTitle').textContent = '編輯用戶';
   document.getElementById('user_id').value = id;
   document.getElementById('u_username').value = username;
@@ -382,6 +383,7 @@ function openEditUser(id, username, role, display, email) {
   document.getElementById('u_role').value = role;
   document.getElementById('u_display').value = display;
   document.getElementById('u_email').value = email;
+  document.getElementById('u_quote_prefix').value = quotePrefix;
   document.getElementById('pwdHint').style.display = 'inline';
   document.getElementById('userModal').classList.add('open');
 }
@@ -398,6 +400,7 @@ async function saveUser() {
     role: document.getElementById('u_role').value,
     display_name: document.getElementById('u_display').value.trim(),
     email: document.getElementById('u_email').value.trim(),
+    quote_prefix: document.getElementById('u_quote_prefix').value.trim().toUpperCase(),
   };
   if (password) body.password = password;
 

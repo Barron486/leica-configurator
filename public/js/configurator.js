@@ -4,6 +4,7 @@ let products = [];
 let selected     = new Map(); // id → quantity
 let customPrices = new Map(); // id → manually entered price
 let baseProduct  = null;
+let _lastQuoteNumber = '';
 
 // ── Price helpers ─────────────────────────────────────────────
 function getPriceKey() {
@@ -457,6 +458,7 @@ function renderInvoice() {
               padding:5px 14px; border-radius:4px; margin-bottom:8px;
             ">報 價 單</div>
             <div style="font-size:11px; color:#666; line-height:2">
+              ${_lastQuoteNumber ? `報價編號：<strong style="color:#1A1A2E;font-family:monospace">${_lastQuoteNumber}</strong><br>` : ''}
               報價日期：<strong style="color:#1A1A2E">${dateStr}</strong><br>
               有效期限：<strong style="color:#E3001B">${expDate}</strong>（${validDays} 天）<br>
               負責業務：<strong style="color:#1A1A2E">${user.display_name || user.username}</strong>
@@ -580,6 +582,9 @@ function generatePDF() {
 
   const custName = document.getElementById('cust_name')?.value.trim() || '報價單';
   const now = new Date().toLocaleDateString('zh-TW').replace(/\//g, '');
+  const pdfTitle = _lastQuoteNumber
+    ? `報價單_${_lastQuoteNumber}_${custName}`
+    : `報價單_正茂生物科技_${now}`;
 
   // 複製並將 invoice-price-input 換成靜態文字，避免列印出現空白輸入框
   const clone = invoiceEl.cloneNode(true);
@@ -596,7 +601,7 @@ function generatePDF() {
   const w = window.open('', '_blank');
   w.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
-    <title>報價單_正茂生物科技_${now}</title>
+    <title>${pdfTitle}</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
       body {
@@ -659,6 +664,7 @@ async function submitQuote() {
   const data = await res.json();
   await apiFetch(`/api/quotes/${data.id}/submit`, { method: 'PUT' });
 
+  _lastQuoteNumber = data.quote_number;
   closeModal('quoteModal');
   showToast(`報價單 ${data.quote_number} 已提交！`, 'success');
 }

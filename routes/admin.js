@@ -182,19 +182,19 @@ router.put('/pricing/:product_id', adminOnly, (req, res) => {
 // ── Users ────────────────────────────────────────────────────
 router.get('/users', adminOnly, (req, res) => {
   const db = getDb();
-  const rows = db.prepare('SELECT id, username, role, display_name, email, created_at FROM users ORDER BY id').all();
+  const rows = db.prepare('SELECT id, username, role, display_name, email, quote_prefix, created_at FROM users ORDER BY id').all();
   db.close();
   res.json(rows);
 });
 
 router.post('/users', adminOnly, (req, res) => {
-  const { username, password, role, display_name, email } = req.body;
+  const { username, password, role, display_name, email, quote_prefix } = req.body;
   if (!username || !password || !role) return res.status(400).json({ error: '帳號、密碼、角色為必填' });
   const hash = bcrypt.hashSync(password, 10);
   const db = getDb();
   try {
-    const result = db.prepare('INSERT INTO users (username, password_hash, role, display_name, email) VALUES (?,?,?,?,?)')
-      .run(username, hash, role, display_name || username, email || '');
+    const result = db.prepare('INSERT INTO users (username, password_hash, role, display_name, email, quote_prefix) VALUES (?,?,?,?,?,?)')
+      .run(username, hash, role, display_name || username, email || '', (quote_prefix || '').toUpperCase());
     db.close();
     res.status(201).json({ id: result.lastInsertRowid });
   } catch (e) {
@@ -204,15 +204,16 @@ router.post('/users', adminOnly, (req, res) => {
 });
 
 router.put('/users/:id', adminOnly, (req, res) => {
-  const { role, display_name, email, password } = req.body;
+  const { role, display_name, email, password, quote_prefix } = req.body;
+  const prefix = (quote_prefix || '').toUpperCase();
   const db = getDb();
   if (password) {
     const hash = bcrypt.hashSync(password, 10);
-    db.prepare('UPDATE users SET role=?, display_name=?, email=?, password_hash=? WHERE id=?')
-      .run(role, display_name, email, hash, req.params.id);
+    db.prepare('UPDATE users SET role=?, display_name=?, email=?, password_hash=?, quote_prefix=? WHERE id=?')
+      .run(role, display_name, email, hash, prefix, req.params.id);
   } else {
-    db.prepare('UPDATE users SET role=?, display_name=?, email=? WHERE id=?')
-      .run(role, display_name, email, req.params.id);
+    db.prepare('UPDATE users SET role=?, display_name=?, email=?, quote_prefix=? WHERE id=?')
+      .run(role, display_name, email, prefix, req.params.id);
   }
   db.close();
   res.json({ message: '已更新' });

@@ -3,13 +3,25 @@ const { getDb } = require('../database/schema');
 
 const router = express.Router();
 
-function generateQuoteNumber() {
+function generateQuoteNumber(db, prefix) {
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
   const d = String(now.getDate()).padStart(2, '0');
-  const rand = Math.floor(Math.random() * 9000) + 1000;
-  return `LCA-${y}${m}${d}-${rand}`;
+  const dateStr = `${y}${m}${d}`;
+
+  if (prefix) {
+    // 計算該字軌的歷史總流水號（不限日期），+1 得下一號
+    const row = db.prepare("SELECT COUNT(*) AS cnt FROM quotes WHERE quote_number LIKE ?").get(`${dateStr}_${prefix}%`);
+    // 若同天已用完，改用全域計數避免碰撞
+    const globalRow = db.prepare("SELECT COUNT(*) AS cnt FROM quotes WHERE quote_number LIKE ?").get(`%_${prefix}%`);
+    const seq = String((globalRow?.cnt || 0) + 1).padStart(3, '0');
+    return `${dateStr}_${prefix}${seq}`;
+  } else {
+    // 無字軌：沿用舊格式
+    const rand = Math.floor(Math.random() * 9000) + 1000;
+    return `${dateStr}_${rand}`;
+  }
 }
 
 const REVIEWER_ROLES = ['admin', 'finance', 'management', 'gm'];
@@ -107,7 +119,8 @@ router.post('/', (req, res) => {
   }
 
   const db = getDb();
-  const quoteNumber = generateQuoteNumber();
+  const userRow = db.prepare('SELECT quote_prefix FROM users WHERE id=?').get(userId);
+  const quoteNumber = generateQuoteNumber(db, userRow?.quote_prefix || '');
 
   const insertQuote = db.prepare(`
     INSERT INTO quotes (quote_number, customer_name, customer_org, customer_email, customer_phone, sales_user_id, status)

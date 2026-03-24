@@ -211,6 +211,12 @@ function _migrate(db) {
     if (!cols2.includes('brand_id')) {
       db.exec('ALTER TABLE products ADD COLUMN brand_id INTEGER REFERENCES brands(id)');
     }
+
+    // 5. users: 加入 quote_prefix 欄位
+    const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+    if (!userCols.includes('quote_prefix')) {
+      db.exec("ALTER TABLE users ADD COLUMN quote_prefix TEXT DEFAULT ''");
+    }
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }
