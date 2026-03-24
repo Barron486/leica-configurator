@@ -475,4 +475,4 @@ function _migrate(db) {
   }
 }
 
-module.exports = { getDb, initSchema };
+module.exports = { getDb, initSchema, DB_PATH };
