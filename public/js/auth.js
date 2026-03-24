@@ -61,13 +61,15 @@ const CATEGORY_LABELS = {
 };
 
 const ROLE_LABELS = {
-  admin:      '管理員',
-  sales:      '業務',
-  customer:   '客戶',
-  finance:    '財務部',
-  management: '管理部',
-  gm:         '總經理',
-  pm:         'PM',
+  admin:       '管理員',
+  super_admin: '超級管理員',
+  demo:        'DEMO',
+  sales:       '業務',
+  customer:    '客戶',
+  finance:     '財務部',
+  management:  '管理部',
+  gm:          '總經理',
+  pm:          'PM',
 };
 
 const STATUS_LABELS = {

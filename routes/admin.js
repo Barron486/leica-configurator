@@ -1,13 +1,15 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const XLSX = require('xlsx');
 const { getDb } = require('../database/schema');
 
 const router = express.Router();
 
-const REVIEWER_ROLES = ['admin', 'finance', 'management', 'gm', 'pm'];
+const REVIEWER_ROLES = ['admin', 'super_admin', 'finance', 'management', 'gm', 'pm'];
+const ADMIN_ROLES    = ['admin', 'super_admin'];
 
 function adminOnly(req, res, next) {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: '需要管理員權限' });
+  if (!ADMIN_ROLES.includes(req.user?.role)) return res.status(403).json({ error: '需要管理員權限' });
   next();
 }
 
@@ -243,6 +245,70 @@ router.get('/quotes', reviewerOnly, (req, res) => {
   const rows = db.prepare(sql).all(...params);
   db.close();
   res.json(rows);
+});
+
+// ── Role Permissions ─────────────────────────────────────────
+router.get('/role-permissions', adminOnly, (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM role_permissions ORDER BY role').all();
+  db.close();
+  res.json(rows);
+});
+
+router.put('/role-permissions/:role', adminOnly, (req, res) => {
+  const { role } = req.params;
+  const { import_products, manage_approval, manage_bom, manage_users, manage_products, manage_pricing, manage_quotes } = req.body;
+  const db = getDb();
+  db.prepare(`INSERT OR REPLACE INTO role_permissions
+    (role, import_products, manage_approval, manage_bom, manage_users, manage_products, manage_pricing, manage_quotes)
+    VALUES (?,?,?,?,?,?,?,?)`)
+    .run(role,
+      import_products  ? 1 : 0,
+      manage_approval  ? 1 : 0,
+      manage_bom       ? 1 : 0,
+      manage_users     ? 1 : 0,
+      manage_products  ? 1 : 0,
+      manage_pricing   ? 1 : 0,
+      manage_quotes    ? 1 : 0
+    );
+  db.close();
+  res.json({ message: '已更新' });
+});
+
+// ── Export Products to Excel ──────────────────────────────────
+router.get('/export/products', adminOnly, (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT p.catalog_number, p.name_zh, p.name_en, p.category, p.sort_order,
+      p.active, p.description, p.notes,
+      COALESCE(pr.cost_price, 0)      AS cost_price,
+      COALESCE(pr.min_sell_price, 0)  AS min_sell_price,
+      COALESCE(pr.suggested_price, 0) AS suggested_price,
+      COALESCE(pr.retail_price, 0)    AS retail_price,
+      pr.currency, pr.notes AS pricing_notes
+    FROM products p
+    LEFT JOIN pricing pr ON pr.product_id = p.id
+    ORDER BY p.sort_order, p.catalog_number
+  `).all();
+  db.close();
+
+  const headers = ['料號','中文名稱','英文名稱','類別','排序','啟用','說明','備註','成本價','最低售價','建議報價','零售價','幣別','定價備註'];
+  const data = rows.map(r => [
+    r.catalog_number, r.name_zh, r.name_en, r.category, r.sort_order,
+    r.active ? '是' : '否', r.description, r.notes,
+    r.cost_price, r.min_sell_price, r.suggested_price, r.retail_price,
+    r.currency, r.pricing_notes,
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  ws['!cols'] = headers.map((_, i) => ({ wch: [12,20,20,16,6,6,30,30,12,12,12,12,6,20][i] || 14 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '產品清單');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  res.setHeader('Content-Disposition', 'attachment; filename="products.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
 });
 
 module.exports = router;

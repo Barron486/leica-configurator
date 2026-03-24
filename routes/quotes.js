@@ -155,7 +155,8 @@ router.put('/:id/submit', (req, res) => {
 
   const quote = db.prepare('SELECT * FROM quotes WHERE id = ?').get(req.params.id);
   if (!quote) { db.close(); return res.status(404).json({ error: '報價單不存在' }); }
-  if (quote.sales_user_id !== userId) { db.close(); return res.status(403).json({ error: '無權限' }); }
+  const isAdmin = ['admin','super_admin'].includes(req.user.role);
+  if (quote.sales_user_id !== userId && !isAdmin) { db.close(); return res.status(403).json({ error: '無權限' }); }
   if (quote.status !== 'draft') { db.close(); return res.status(400).json({ error: '只有草稿狀態可提交' }); }
 
   // 檢查是否有指派 PM 的產品在這張報價單中

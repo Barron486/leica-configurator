@@ -1,6 +1,6 @@
 // ── Init ──────────────────────────────────────────────────────
-const REVIEWER_ROLES = ['admin', 'finance', 'management', 'gm', 'pm'];
-const ADMIN_ONLY_ROLES = ['admin'];
+const REVIEWER_ROLES   = ['admin', 'super_admin', 'finance', 'management', 'gm', 'pm'];
+const ADMIN_ONLY_ROLES = ['admin', 'super_admin'];
 
 let _currentUser = null;
 
@@ -41,6 +41,7 @@ function switchTab(name) {
   if (name === 'pricing')   loadPricing();
   if (name === 'products')  loadProducts();
   if (name === 'users')     loadUsers();
+  if (name === 'roleperms') loadRolePermissions();
   if (name === 'bom')       loadBoms();
   if (name === 'approvals') loadChain();
   if (name === 'catalog')   loadCatalogItems();
@@ -925,4 +926,65 @@ async function deleteCatalogItem(id, name) {
   if (!res || !res.ok) { showToast('刪除失敗','error'); return; }
   showToast('已刪除','success');
   loadCatalogItems();
+}
+
+// ── Role Permissions ──────────────────────────────────────────
+const RP_FIELDS = [
+  { key: 'import_products',  label: '匯入產品' },
+  { key: 'manage_approval',  label: '修改審批順序' },
+  { key: 'manage_bom',       label: 'BOM 管理' },
+  { key: 'manage_users',     label: '用戶管理' },
+  { key: 'manage_products',  label: '產品管理' },
+  { key: 'manage_pricing',   label: '定價管理' },
+  { key: 'manage_quotes',    label: '報價管理' },
+];
+
+async function loadRolePermissions() {
+  const res = await apiFetch('/api/admin/role-permissions');
+  if (!res || !res.ok) return;
+  const rows = await res.json();
+
+  const tbody = document.getElementById('rolePermsBody');
+  tbody.innerHTML = rows.map(r => {
+    const checkboxes = RP_FIELDS.map(f =>
+      `<td style="text-align:center">
+        <input type="checkbox" ${r[f.key] ? 'checked' : ''}
+          id="rp_${r.role}_${f.key}" style="width:16px;height:16px;cursor:pointer">
+      </td>`
+    ).join('');
+    return `<tr>
+      <td><span class="role-badge role-${r.role}">${ROLE_LABELS[r.role] || r.role}</span></td>
+      ${checkboxes}
+      <td><button class="btn btn-outline btn-sm" onclick="saveRolePermissions('${r.role}')">儲存</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function saveRolePermissions(role) {
+  const body = {};
+  RP_FIELDS.forEach(f => {
+    body[f.key] = document.getElementById(`rp_${role}_${f.key}`)?.checked ? 1 : 0;
+  });
+  const res = await apiFetch(`/api/admin/role-permissions/${role}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  if (!res || !res.ok) { showToast('儲存失敗', 'error'); return; }
+  showToast(`${ROLE_LABELS[role] || role} 權限已更新`, 'success');
+}
+
+// ── Export Excel ──────────────────────────────────────────────
+async function exportProductsExcel() {
+  const token = localStorage.getItem('token');
+  const res = await fetch('/api/admin/export/products', {
+    headers: { 'Authorization': 'Bearer ' + token },
+  });
+  if (!res.ok) { showToast('匯出失敗', 'error'); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `products_${new Date().toISOString().slice(0,10)}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
 }

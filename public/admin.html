@@ -59,6 +59,7 @@
     <button class="tab-btn" onclick="switchTab('pricing')">💰 定價管理</button>
     <button class="tab-btn" onclick="switchTab('products')">📦 產品管理</button>
     <button class="tab-btn" onclick="switchTab('users')">👤 用戶管理</button>
+    <button class="tab-btn" onclick="switchTab('roleperms')">🔑 角色權限</button>
     <button class="tab-btn" onclick="switchTab('bom')">📋 BOM 管理</button>
     <button class="tab-btn" id="tab-btn-approvals" onclick="switchTab('approvals')">🔐 審批人員</button>
     <button class="tab-btn" id="tab-btn-import" onclick="switchTab('import')">📥 匯入產品</button>
@@ -80,6 +81,7 @@
           <option value="rejected">已退回</option>
         </select>
       </div>
+      <button class="btn btn-outline btn-sm" onclick="exportProductsExcel()">⬇ 匯出產品 Excel</button>
     </div>
     <div class="card">
       <table class="data-table">
@@ -312,6 +314,36 @@
     </div>
   </div>
 
+  <!-- Tab: Role Permissions -->
+  <div id="tab-roleperms" class="tab-panel">
+    <div class="flex-between" style="margin-bottom:16px">
+      <div>
+        <strong>角色功能權限</strong>
+        <span class="text-muted text-small" style="margin-left:8px">設定各角色可存取的後台功能</span>
+      </div>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table class="data-table" id="rolePermsTable">
+        <thead>
+          <tr>
+            <th>角色</th>
+            <th style="text-align:center">匯入產品</th>
+            <th style="text-align:center">修改審批順序</th>
+            <th style="text-align:center">BOM 管理</th>
+            <th style="text-align:center">用戶管理</th>
+            <th style="text-align:center">產品管理</th>
+            <th style="text-align:center">定價管理</th>
+            <th style="text-align:center">報價管理</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="rolePermsBody">
+          <tr><td colspan="9" class="text-muted">載入中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- Tab: Catalog Items -->
   <div id="tab-catalog" class="tab-panel">
     <div class="flex-between" style="margin-bottom:16px">
@@ -390,6 +422,7 @@
       <div class="form-group">
         <label>角色</label>
         <select id="u_role">
+          <option value="super_admin">超級管理員</option>
           <option value="admin">管理員</option>
           <option value="sales">業務</option>
           <option value="customer">客戶</option>
@@ -397,6 +430,7 @@
           <option value="management">管理部</option>
           <option value="gm">總經理</option>
           <option value="pm">PM（產品經理）</option>
+          <option value="demo">DEMO</option>
         </select>
       </div>
       <div class="form-group"><label>顯示名稱</label><input type="text" id="u_display"></div>

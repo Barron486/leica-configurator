@@ -139,6 +139,17 @@ function initSchema() {
       can_see_min_price INTEGER DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      role TEXT PRIMARY KEY,
+      import_products INTEGER DEFAULT 0,
+      manage_approval INTEGER DEFAULT 0,
+      manage_bom INTEGER DEFAULT 0,
+      manage_users INTEGER DEFAULT 0,
+      manage_products INTEGER DEFAULT 0,
+      manage_pricing INTEGER DEFAULT 0,
+      manage_quotes INTEGER DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS quote_approvals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       quote_id INTEGER NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
@@ -290,6 +301,55 @@ function _migrate(db) {
         console.log('Migration 7: seeded catalog_items');
       }
     } catch(e) { console.error('Migration 7 error:', e.message); }
+
+    // 8. users: 允許 'super_admin' 和 'demo' 角色
+    try {
+      db.prepare("INSERT INTO users (username,password_hash,role,display_name) VALUES ('__satest','x','super_admin','x')").run();
+      db.prepare("DELETE FROM users WHERE username='__satest'").run();
+    } catch(e) {
+      if (e.message.includes('CHECK constraint')) {
+        db.exec(`
+          CREATE TABLE users_v3 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin','super_admin','demo','sales','customer','finance','management','gm','pm')),
+            display_name TEXT NOT NULL,
+            email TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            quote_prefix TEXT DEFAULT ''
+          );
+          INSERT INTO users_v3 SELECT id,username,password_hash,role,display_name,email,created_at,quote_prefix FROM users;
+          DROP TABLE users;
+          ALTER TABLE users_v3 RENAME TO users;
+        `);
+        console.log('Migration 8: added super_admin and demo roles');
+      }
+    }
+
+    // 9. role_permissions: seed 預設權限
+    try {
+      const rpCnt = db.prepare("SELECT COUNT(*) AS c FROM role_permissions").get();
+      if (rpCnt.c === 0) {
+        const insRp = db.prepare(`INSERT OR IGNORE INTO role_permissions
+          (role, import_products, manage_approval, manage_bom, manage_users, manage_products, manage_pricing, manage_quotes)
+          VALUES (?,?,?,?,?,?,?,?)`);
+        const seedRp = db.transaction(() => {
+          insRp.run('admin',       1,1,1,1,1,1,1);
+          insRp.run('super_admin', 1,1,1,1,1,1,1);
+          insRp.run('sales',       0,0,0,0,0,0,1);
+          insRp.run('customer',    0,0,0,0,0,0,0);
+          insRp.run('finance',     0,0,0,0,0,0,1);
+          insRp.run('management',  0,0,0,0,0,0,1);
+          insRp.run('gm',          0,0,0,0,0,0,1);
+          insRp.run('pm',          0,0,0,0,0,0,1);
+          insRp.run('demo',        0,0,0,0,0,0,0);
+        });
+        seedRp();
+        console.log('Migration 9: seeded role_permissions');
+      }
+    } catch(e) { console.error('Migration 9 error:', e.message); }
+
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }
