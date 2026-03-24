@@ -128,10 +128,19 @@ function _refreshInvoiceTotal() {
 })();
 
 // ── Render product list ───────────────────────────────────────
+// 只顯示 BOM 中已選的品項（不允許自由新增/移除）
 function renderProducts() {
   const container = document.getElementById('productList');
+
+  // 只取出已在 BOM 中的產品
+  const bomItems = products.filter(p => selected.has(p.id));
+  if (bomItems.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:#888">BOM 無品項</div>';
+    return;
+  }
+
   const grouped = {};
-  products.forEach(p => {
+  bomItems.forEach(p => {
     if (!grouped[p.category]) grouped[p.category] = [];
     grouped[p.category].push(p);
   });
@@ -142,24 +151,18 @@ function renderProducts() {
   for (const cat of categoryOrder) {
     const items = grouped[cat];
     if (!items) continue;
+    items.sort((a, b) => a.sort_order - b.sort_order);
+
     html += `<div class="category-section">
       <div class="category-title">${CATEGORY_LABELS[cat] || cat}</div>`;
 
-    // 已選項目排最前面
-    items.sort((a, b) => {
-      const selA = selected.has(a.id) ? 0 : 1;
-      const selB = selected.has(b.id) ? 0 : 1;
-      return selA - selB || a.sort_order - b.sort_order;
-    });
-
     for (const p of items) {
-      const isBase = p.is_base_unit;
       const isIncluded = p.is_included_in_base && !p.is_base_unit;
-      const isSel = selected.has(p.id);
-      const qty   = selected.get(p.id) || 1;
+      const qty = selected.get(p.id) || 1;
 
-      html += `<div class="product-item ${isSel ? 'selected' : ''} ${isBase ? 'base-item' : ''}" onclick="toggleProduct(${p.id})">`;
-      html += `<input type="checkbox" ${isSel ? 'checked' : ''} ${isBase ? 'disabled' : ''} onclick="event.stopPropagation(); toggleProduct(${p.id})">`;
+      // BOM 品項固定選中，不可取消勾選
+      html += `<div class="product-item selected">`;
+      html += `<input type="checkbox" checked disabled>`;
       html += `<div class="product-info">`;
       html += `<div class="product-name">${p.name_zh}${isIncluded ? ' <span style="color:#28A745;font-size:11px">✓ 含於配置</span>' : ''}</div>`;
       html += `<div class="product-code">${p.catalog_number}</div>`;
@@ -170,15 +173,11 @@ function renderProducts() {
       // Price + qty stepper
       html += `<div class="product-price">`;
       html += renderPriceColumn(p);
-
-      // 數量調整器：僅在已選且非基礎主機時顯示
-      if (isSel && !isBase) {
-        html += `<div class="qty-stepper" onclick="event.stopPropagation()">
-          <button class="qty-btn" onclick="changeQty(${p.id}, -1)">−</button>
-          <span class="qty-val">${qty}</span>
-          <button class="qty-btn" onclick="changeQty(${p.id}, 1)">+</button>
-        </div>`;
-      }
+      html += `<div class="qty-stepper" onclick="event.stopPropagation()">
+        <button class="qty-btn" onclick="changeQty(${p.id}, -1)">−</button>
+        <span class="qty-val">${qty}</span>
+        <button class="qty-btn" onclick="changeQty(${p.id}, 1)">+</button>
+      </div>`;
       html += `</div></div>`;
     }
     html += `</div>`;
@@ -230,9 +229,8 @@ function changeQty(id, delta) {
   if (!selected.has(id)) return;
   const newQty = (selected.get(id) || 1) + delta;
   if (newQty < 1) {
-    // 減到 0 = 取消選取（基礎主機除外）
-    const p = products.find(x => x.id === id);
-    if (p && !p.is_base_unit) selected.delete(id);
+    // BOM 品項數量最低為 1，不允許移除
+    return;
   } else if (newQty > 99) {
     return;
   } else {

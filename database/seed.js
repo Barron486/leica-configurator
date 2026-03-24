@@ -34,7 +34,7 @@ function seed() {
       name_zh: 'HistoCore MULTICUT 配置 C4',
       name_en: 'HistoCore MULTICUT Configuration C4',
       category: 'base',
-      is_base_unit: 1,
+      is_base_unit: 0,
       is_included_in_base: 0,
       description: '含：基本儀器、快速夾緊系統、良好方向性檢體夾具固定裝置、通用匣盒夾具、刀架底座、刀架 DL、國際使用說明套裝',
       notes: '標準配置，適合大多數常規組織學實驗室',

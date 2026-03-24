@@ -3,7 +3,9 @@ const path = require('path');
 const fs   = require('fs');
 
 // Railway 掛載磁碟預設在 /data，本機則放在專案根目錄
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'leica.db');
+// 自動偵測 Railway 環境（RAILWAY_ENVIRONMENT 變數由平台注入）
+const DB_PATH = process.env.DB_PATH ||
+  (process.env.RAILWAY_ENVIRONMENT ? '/data/leica.db' : path.join(__dirname, '..', 'leica.db'));
 
 // 確保目錄存在
 const DB_DIR = path.dirname(DB_PATH);
@@ -63,6 +65,7 @@ function initSchema() {
       sales_user_id INTEGER REFERENCES users(id),
       status TEXT DEFAULT 'draft' CHECK(status IN ('draft','submitted','approved','rejected','pending_gm','pending_pm')),
       admin_notes TEXT,
+      case_notes TEXT DEFAULT '',
       reviewer_role TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       submitted_at DATETIME,
@@ -358,6 +361,11 @@ function _migrate(db) {
         console.log('Migration 10: added quotes.case_notes');
       }
     } catch(e) { console.error('Migration 10 error:', e.message); }
+
+    // 12. 修正 149MULTI0C4 的 is_base_unit — 讓該產品可在配置器中選取
+    try {
+      db.prepare("UPDATE products SET is_base_unit=0 WHERE catalog_number='149MULTI0C4' AND is_base_unit=1").run();
+    } catch(e) { console.error('Migration 12 error:', e.message); }
 
     // 11. 建立 notifications 表
     try {
