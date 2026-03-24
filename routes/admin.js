@@ -12,6 +12,10 @@ function adminOnly(req, res, next) {
   if (!ADMIN_ROLES.includes(req.user?.role)) return res.status(403).json({ error: '需要管理員權限' });
   next();
 }
+function superAdminOnly(req, res, next) {
+  if (req.user?.role !== 'super_admin') return res.status(403).json({ error: '需要超級管理員權限' });
+  next();
+}
 
 // 依 role_permissions 表檢查功能權限（admin/super_admin 直接放行）
 function perm(key) {
@@ -165,6 +169,16 @@ router.post('/products', perm('manage_products'), (req, res) => {
   db.prepare('INSERT INTO pricing (product_id) VALUES (?)').run(result.lastInsertRowid);
   db.close();
   res.status(201).json({ id: result.lastInsertRowid });
+});
+
+// ── PATCH /products/:id/active — 快速切換啟用狀態（停用按鈕專用）────
+router.patch('/products/:id/active', perm('manage_products'), (req, res) => {
+  const { active } = req.body;
+  if (active === undefined) return res.status(400).json({ error: '缺少 active 參數' });
+  const db = getDb();
+  db.prepare('UPDATE products SET active=? WHERE id=?').run(active ? 1 : 0, req.params.id);
+  db.close();
+  res.json({ message: '已更新' });
 });
 
 router.put('/products/:id', perm('manage_products'), (req, res) => {
@@ -330,6 +344,26 @@ router.get('/export/products', adminOnly, (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="products.xlsx"');
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.send(buf);
+});
+
+// ── API Settings (super_admin only) ──────────────────────────
+router.get('/api-settings', superAdminOnly, (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT key, value, description, updated_at FROM api_settings ORDER BY key').all();
+  db.close();
+  res.json(rows);
+});
+
+router.put('/api-settings/:key', superAdminOnly, (req, res) => {
+  const { value } = req.body;
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO api_settings (key, value, updated_at, updated_by)
+    VALUES (?, ?, CURRENT_TIMESTAMP, ?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at, updated_by=excluded.updated_by
+  `).run(req.params.key, value || '', req.user.id);
+  db.close();
+  res.json({ message: '已更新' });
 });
 
 module.exports = router;

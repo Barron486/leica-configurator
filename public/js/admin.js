@@ -45,8 +45,12 @@ async function applyRolePermTabs(user) {
   const isAdmin = ADMIN_ONLY_ROLES.includes(user.role);
 
   if (isAdmin) {
-    // admin/super_admin 全部顯示
+    // admin/super_admin 全部顯示；僅 super_admin 顯示系統設定 tab
     document.querySelectorAll('.tab-btn').forEach(btn => btn.style.display = '');
+    if (user.role !== 'super_admin') {
+      const settingsBtn = document.getElementById('tab-btn-settings');
+      if (settingsBtn) settingsBtn.style.display = 'none';
+    }
     return;
   }
 
@@ -89,6 +93,7 @@ function switchTab(name) {
   if (name === 'bom')       loadBoms();
   if (name === 'approvals') loadChain();
   if (name === 'catalog')   loadCatalogItems();
+  if (name === 'settings')  loadApiSettings();
 }
 
 // ── Quotes ────────────────────────────────────────────────────
@@ -408,8 +413,8 @@ async function saveProduct() {
 }
 
 async function toggleProduct(id, currentActive) {
-  const res = await apiFetch(`/api/admin/products/${id}`, {
-    method: 'PUT',
+  const res = await apiFetch(`/api/admin/products/${id}/active`, {
+    method: 'PATCH',
     body: JSON.stringify({ active: currentActive ? 0 : 1 }),
   });
   if (!res || !res.ok) { showToast('操作失敗', 'error'); return; }
@@ -1046,6 +1051,66 @@ async function saveRolePermissions(role) {
   });
   if (!res || !res.ok) { showToast('儲存失敗', 'error'); return; }
   showToast(`${ROLE_LABELS[role] || role} 權限已更新`, 'success');
+}
+
+// ── API Settings (super_admin only) ───────────────────────────
+const API_KEY_LABELS = {
+  openai_api_key:    'OpenAI API Key',
+  gemini_api_key:    'Google Gemini API Key',
+  anthropic_api_key: 'Anthropic Claude API Key',
+};
+
+async function loadApiSettings() {
+  const res = await apiFetch('/api/admin/api-settings');
+  if (!res || !res.ok) { showToast('載入失敗', 'error'); return; }
+  const rows = await res.json();
+  const container = document.getElementById('apiSettingsBody');
+  if (!container) return;
+  container.innerHTML = rows.map(r => {
+    const label = API_KEY_LABELS[r.key] || r.key;
+    const maskedVal = r.value ? '●'.repeat(Math.min(r.value.length, 20)) : '';
+    const updatedAt = r.updated_at ? r.updated_at.slice(0,16).replace('T',' ') : '—';
+    return `
+    <tr>
+      <td><strong>${label}</strong><br><span class="text-small text-muted">${r.key}</span></td>
+      <td>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="password" id="apikey_${r.key}"
+            value="${escapeHtml(r.value||'')}"
+            placeholder="${maskedVal || '（未設定）'}"
+            style="flex:1;font-family:monospace;font-size:12px"
+            autocomplete="new-password">
+          <button class="btn btn-sm" onclick="toggleApiKeyVisibility('apikey_${r.key}', this)">👁</button>
+        </div>
+      </td>
+      <td class="text-small text-muted">${updatedAt}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="saveApiSetting('${r.key}')">儲存</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleApiKeyVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+async function saveApiSetting(key) {
+  const input = document.getElementById(`apikey_${key}`);
+  if (!input) return;
+  const res = await apiFetch(`/api/admin/api-settings/${key}`, {
+    method: 'PUT',
+    body: JSON.stringify({ value: input.value }),
+  });
+  if (!res || !res.ok) { showToast('儲存失敗', 'error'); return; }
+  showToast('已儲存', 'success');
+  loadApiSettings();
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ── Export Excel ──────────────────────────────────────────────

@@ -155,6 +155,14 @@ function initSchema() {
       manage_quotes INTEGER DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS api_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_by INTEGER REFERENCES users(id)
+    );
+
     CREATE TABLE IF NOT EXISTS quote_approvals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       quote_id INTEGER NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
@@ -445,6 +453,22 @@ function _migrate(db) {
         console.log('Migration 15: quote_items supports custom items');
       }
     } catch(e) { console.error('Migration 15 error:', e.message); }
+
+    // 16. api_settings: seed 初始 key（舊 DB 需補建表）
+    try {
+      db.exec(`CREATE TABLE IF NOT EXISTS api_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_by INTEGER REFERENCES users(id)
+      )`);
+      const insKey = db.prepare(`INSERT OR IGNORE INTO api_settings (key, value, description) VALUES (?,?,?)`);
+      insKey.run('openai_api_key',    '', 'OpenAI API Key（用於 AI 產品匯入分析）');
+      insKey.run('gemini_api_key',    '', 'Google Gemini API Key');
+      insKey.run('anthropic_api_key', '', 'Anthropic Claude API Key');
+      console.log('Migration 16: api_settings table ready');
+    } catch(e) { console.error('Migration 16 error:', e.message); }
 
   } finally {
     db.exec('PRAGMA foreign_keys = ON');

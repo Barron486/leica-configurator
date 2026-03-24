@@ -70,6 +70,7 @@
     <button class="tab-btn" id="tab-btn-approvals" onclick="switchTab('approvals')">🔐 審批人員</button>
     <button class="tab-btn" id="tab-btn-import" onclick="switchTab('import')">📥 匯入產品</button>
     <button class="tab-btn" onclick="switchTab('catalog')">🗂️ 目錄管理</button>
+    <button class="tab-btn" id="tab-btn-settings" style="display:none" onclick="switchTab('settings')">⚙️ 系統設定</button>
   </div>
 
   <!-- Tab: Quotes -->
@@ -389,6 +390,31 @@
     </div>
     <div class="modal-body" id="quoteDetailBody"></div>
     <div class="modal-footer" id="quoteDetailFooter"></div>
+  </div>
+</div>
+
+<!-- Tab: Settings (super_admin only) -->
+<div id="tab-settings" class="tab-panel">
+  <div class="flex-between" style="margin-bottom:16px">
+    <div>
+      <strong>系統設定</strong>
+      <p class="text-muted text-small" style="margin:4px 0 0">僅超級管理員可存取。API Key 用於 AI 輔助功能。</p>
+    </div>
+  </div>
+  <div class="card" style="padding:0">
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width:220px">名稱</th>
+          <th>API Key</th>
+          <th style="width:140px">最後更新</th>
+          <th style="width:80px">操作</th>
+        </tr>
+      </thead>
+      <tbody id="apiSettingsBody">
+        <tr><td colspan="4" class="text-center text-muted">載入中…</td></tr>
+      </tbody>
+    </table>
   </div>
 </div>
 

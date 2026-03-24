@@ -15,14 +15,20 @@ function seed() {
     { username: 'gm',       password: 'gm888888',    role: 'gm',         display_name: '總經理',   email: 'gm@genmall.com.tw' },
   ];
 
-  const insertUser = db.prepare(`
-    INSERT OR IGNORE INTO users (username, password_hash, role, display_name, email)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-
-  for (const u of users) {
-    const hash = bcrypt.hashSync(u.password, 10);
-    insertUser.run(u.username, hash, u.role, u.display_name, u.email);
+  // 只在 users 表完全空白時才 seed（防止重新部署覆蓋 Railway 上手動新增的帳號）
+  const userCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
+  if (userCount === 0) {
+    const insertUser = db.prepare(`
+      INSERT OR IGNORE INTO users (username, password_hash, role, display_name, email)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    for (const u of users) {
+      const hash = bcrypt.hashSync(u.password, 10);
+      insertUser.run(u.username, hash, u.role, u.display_name, u.email);
+    }
+    console.log('Seeded default users.');
+  } else {
+    console.log(`Users table has ${userCount} rows, skipping user seed.`);
   }
 
   // ── 產品資料（來源：手冊 14051880128Q v2.3Q）────────────────
@@ -346,31 +352,38 @@ function seed() {
     },
   ];
 
-  const insertProduct = db.prepare(`
-    INSERT OR IGNORE INTO products
-      (catalog_number, name_zh, name_en, category, is_base_unit, is_included_in_base, description, notes, sort_order)
-    VALUES
-      (@catalog_number, @name_zh, @name_en, @category, @is_base_unit, @is_included_in_base, @description, @notes, @sort_order)
-  `);
+  // 只在 products 表完全空白時才 seed（防止重新部署覆蓋 Railway 上維護的產品資料）
+  const productCount = db.prepare('SELECT COUNT(*) AS c FROM products').get().c;
+  if (productCount === 0) {
+    const insertProduct = db.prepare(`
+      INSERT OR IGNORE INTO products
+        (catalog_number, name_zh, name_en, category, is_base_unit, is_included_in_base, description, notes, sort_order)
+      VALUES
+        (@catalog_number, @name_zh, @name_en, @category, @is_base_unit, @is_included_in_base, @description, @notes, @sort_order)
+    `);
 
-  const insertPricing = db.prepare(`
-    INSERT OR IGNORE INTO pricing (product_id, cost_price, min_sell_price, suggested_price, retail_price, currency)
-    SELECT id, 0, 0, 0, 0, 'TWD' FROM products WHERE catalog_number = ?
-  `);
+    const insertPricing = db.prepare(`
+      INSERT OR IGNORE INTO pricing (product_id, cost_price, min_sell_price, suggested_price, retail_price, currency)
+      SELECT id, 0, 0, 0, 0, 'TWD' FROM products WHERE catalog_number = ?
+    `);
 
-  for (const p of products) {
-    insertProduct.run({
-      is_base_unit: 0,
-      is_included_in_base: 0,
-      name_en: null,
-      notes: null,
-      ...p,
-    });
-    insertPricing.run(p.catalog_number);
+    for (const p of products) {
+      insertProduct.run({
+        is_base_unit: 0,
+        is_included_in_base: 0,
+        name_en: null,
+        notes: null,
+        ...p,
+      });
+      insertPricing.run(p.catalog_number);
+    }
+    console.log(`Seeded ${products.length} products.`);
+  } else {
+    console.log(`Products table has ${productCount} rows, skipping product seed.`);
   }
 
   db.close();
-  console.log(`Seeded ${products.length} products and default users.`);
+  console.log('Seed complete.');
   console.log('\n預設帳號：');
   console.log('  admin / admin123   → 管理員（可看成本、全部價格）');
   console.log('  sales / sales123   → 業務（可看最低售價、建議報價）');
