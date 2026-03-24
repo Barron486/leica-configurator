@@ -28,12 +28,12 @@ function notReadOnly(req, res, next) {
 
 // ── GET /api/admin/boms/catalog ──────────────────────────────
 // 靜態路由必須在 /:id 之前，否則 Express 會被 wildcard 攔截
-// 公開（任何已登入用戶）：給產品目錄頁使用，只回傳啟用中的 BOM
+// 公開（任何已登入用戶）：給產品目錄頁使用，回傳全部 BOM（含 coming_soon）
 router.get('/catalog', (req, res) => {
   const db = getDb();
   const boms = db.prepare(`
-    SELECT id, name, description, short_description, instrument_category
-    FROM boms WHERE active=1 AND instrument_category != '' ORDER BY instrument_category, name
+    SELECT id, name, description, short_description, instrument_category, subcategory, active
+    FROM boms WHERE instrument_category != '' ORDER BY instrument_category, name
   `).all();
   db.close();
   res.json(boms);
@@ -73,13 +73,13 @@ router.get('/', adminOnly, (req, res) => {
 
 // ── POST /api/admin/boms ──────────────────────────────────────
 router.post('/', permBom, (req, res) => {
-  const { name, description, instrument_category, short_description } = req.body;
+  const { name, description, instrument_category, subcategory, short_description, active } = req.body;
   if (!name) return res.status(400).json({ error: 'BOM 名稱為必填' });
   const db = getDb();
   try {
     const result = db.prepare(
-      'INSERT INTO boms (name, description, instrument_category, short_description) VALUES (?,?,?,?)'
-    ).run(name, description || '', instrument_category || '', short_description || '');
+      'INSERT INTO boms (name, description, instrument_category, subcategory, short_description, active) VALUES (?,?,?,?,?,?)'
+    ).run(name, description || '', instrument_category || '', subcategory || '', short_description || '', active ?? 0);
     db.close();
     res.status(201).json({ id: result.lastInsertRowid });
   } catch(e) {
@@ -91,13 +91,13 @@ router.post('/', permBom, (req, res) => {
 
 // ── PUT /api/admin/boms/:id ───────────────────────────────────
 router.put('/:id', permBom, (req, res) => {
-  const { name, description, active, instrument_category, short_description } = req.body;
+  const { name, description, active, instrument_category, subcategory, short_description } = req.body;
   if (!name) return res.status(400).json({ error: 'BOM 名稱為必填' });
   const db = getDb();
   try {
     db.prepare(
-      'UPDATE boms SET name=?, description=?, active=?, instrument_category=?, short_description=? WHERE id=?'
-    ).run(name, description || '', active ?? 1, instrument_category || '', short_description || '', req.params.id);
+      'UPDATE boms SET name=?, description=?, active=?, instrument_category=?, subcategory=?, short_description=? WHERE id=?'
+    ).run(name, description || '', active ?? 0, instrument_category || '', subcategory || '', short_description || '', req.params.id);
     db.close();
     res.json({ message: '已更新' });
   } catch(e) {

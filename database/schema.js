@@ -382,6 +382,44 @@ function _migrate(db) {
       console.log('Migration 11: created notifications table');
     } catch(e) { console.error('Migration 11 error:', e.message); }
 
+    // 12. 修正 149MULTI0C4 的 is_base_unit — 此 migration 已在 fix commit 中加入，保留但改為 idempotent
+    // (此處原本有 migration 12，已移至 fix commit)
+
+    // 13. boms: 加入 subcategory 欄位（供數位病理子分類使用）
+    try {
+      const bomCols3 = db.prepare("PRAGMA table_info(boms)").all().map(c => c.name);
+      if (!bomCols3.includes('subcategory')) {
+        db.exec("ALTER TABLE boms ADD COLUMN subcategory TEXT DEFAULT ''");
+        console.log('Migration 13: added boms.subcategory');
+      }
+    } catch(e) { console.error('Migration 13 error:', e.message); }
+
+    // 14. 將 catalog_items 全部轉換為 BOMs（唯讀 catalog 統一以 BOM 管理）
+    try {
+      const catItems = db.prepare(
+        "SELECT * FROM catalog_items WHERE active=1 AND instrument_category != ''"
+      ).all();
+      const checkBom  = db.prepare("SELECT id FROM boms WHERE name=? AND instrument_category=?");
+      const insertBom = db.prepare(
+        "INSERT INTO boms (name, instrument_category, subcategory, short_description, active) VALUES (?,?,?,?,?)"
+      );
+      const doMigrate = db.transaction(() => {
+        for (const item of catItems) {
+          if (!checkBom.get(item.name, item.instrument_category)) {
+            insertBom.run(
+              item.name,
+              item.instrument_category,
+              item.subcategory || '',
+              item.short_description || '',
+              item.status === 'available' ? 1 : 0
+            );
+          }
+        }
+      });
+      doMigrate();
+      console.log('Migration 14: catalog_items → BOMs');
+    } catch(e) { console.error('Migration 14 error:', e.message); }
+
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }

@@ -277,66 +277,60 @@
     const token = localStorage.getItem('token');
     const headers = { 'Authorization': 'Bearer ' + token };
     try {
-      const [catRes, bomRes] = await Promise.all([
-        fetch('/api/admin/catalog/public', { headers }),
-        fetch('/api/admin/boms/catalog', { headers }),
-      ]);
-      const catalogItems = catRes.ok ? await catRes.json() : [];
+      const bomRes = await fetch('/api/admin/boms/catalog', { headers });
       const boms = bomRes.ok ? await bomRes.json() : [];
 
-      // Render catalog items
-      for (const item of catalogItems) {
-        if (item.instrument_category === 'digital_pathology') {
-          renderDpItem(item);
-        } else {
-          const grid = document.getElementById('grid-' + item.instrument_category);
-          if (grid) appendProductCard(grid, item.name, item.short_description, item.status, item.configurator_url);
-        }
-      }
-
-      // Render BOM cards
+      // 所有 BOM 統一渲染：active=1 可點選配置，active=0 為 Coming Soon
       for (const b of boms) {
+        const status = b.active ? 'available' : 'coming_soon';
+        const url    = b.active ? `/index.html?bom=${b.id}` : '';
         if (b.instrument_category === 'digital_pathology') {
-          const block = document.getElementById('block-digital_pathology');
-          if (block) {
-            block.style.display = '';
-            appendProductCard(document.getElementById('grid-digital_pathology'), b.name, b.short_description, 'available', `/index.html?bom=${b.id}`);
-          }
+          renderDpBom(b, status, url);
         } else {
           const grid = document.getElementById('grid-' + b.instrument_category);
-          if (grid) {
-            const block = document.getElementById('block-' + b.instrument_category);
-            if (block) block.style.display = '';
-            appendProductCard(grid, b.name, b.short_description, 'available', `/index.html?bom=${b.id}`);
-          }
+          if (grid) appendProductCard(grid, b.name, b.short_description, status, url);
         }
       }
     } catch(e) { console.error('loadCatalog error', e); }
   }
 
-  function renderDpItem(item) {
-    const sub = item.subcategory || '掃描儀';
-    const blockId = 'block-dp-' + sub.replace(/\s+/g,'_').replace(/[^\w]/g,'');
+  // 數位病理依 subcategory 動態建立分組區塊
+  function renderDpBom(b, status, url) {
+    const sub     = b.subcategory || '數位病理解決方案';
+    const safeKey = sub.replace(/\s+/g,'_').replace(/[^\w]/g,'');
+    const blockId = 'block-dp-' + safeKey;
     let block = document.getElementById(blockId);
     if (!block) {
-      const meta = DP_SUBCATEGORY_META[sub] || { en: sub, sub: '' };
+      const meta     = DP_SUBCATEGORY_META[sub] || { en: sub, sub: '' };
       const cardBody = document.querySelector('#dp-card-body');
-      block = document.createElement('div');
+      block          = document.createElement('div');
       block.className = 'category-block';
-      block.id = blockId;
-      block.innerHTML = `
-        <div class="category-label">
-          <span class="category-label-main">${sub}</span>
-          <span class="category-label-en">${meta.en}</span>
-        </div>
-        ${meta.sub ? `<div class="category-sub">${meta.sub}</div>` : ''}
-        <div class="product-grid" id="grid-dp-${sub.replace(/\s+/g,'_').replace(/[^\w]/g,'')}"></div>
-      `;
+      block.id        = blockId;
+      const labelDiv  = document.createElement('div');
+      labelDiv.className = 'category-label';
+      const nameEl    = document.createElement('span');
+      nameEl.className = 'category-label-main';
+      nameEl.textContent = sub;
+      const enEl      = document.createElement('span');
+      enEl.className  = 'category-label-en';
+      enEl.textContent = meta.en;
+      labelDiv.appendChild(nameEl);
+      labelDiv.appendChild(enEl);
+      block.appendChild(labelDiv);
+      if (meta.sub) {
+        const subEl = document.createElement('div');
+        subEl.className = 'category-sub';
+        subEl.textContent = meta.sub;
+        block.appendChild(subEl);
+      }
+      const gridDiv   = document.createElement('div');
+      gridDiv.className = 'product-grid';
+      gridDiv.id      = 'grid-dp-' + safeKey;
+      block.appendChild(gridDiv);
       cardBody.insertBefore(block, cardBody.firstChild);
     }
-    const gridId = 'grid-dp-' + sub.replace(/\s+/g,'_').replace(/[^\w]/g,'');
-    const grid = document.getElementById(gridId);
-    if (grid) appendProductCard(grid, item.name, item.short_description, item.status, item.configurator_url);
+    const grid = document.getElementById('grid-dp-' + safeKey);
+    if (grid) appendProductCard(grid, b.name, b.short_description, status, url);
   }
 
   function appendProductCard(grid, name, shortDesc, status, url) {

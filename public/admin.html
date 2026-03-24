@@ -488,7 +488,7 @@
     </div>
     <div class="modal-body">
       <input type="hidden" id="bom_id">
-      <div class="form-group"><label>BOM 名稱 *</label><input type="text" id="bom_name" placeholder="例：C4 標準配置"></div>
+      <div class="form-group"><label>BOM 名稱 *</label><input type="text" id="bom_name" placeholder="例：HistoCore MULTICUT 配置 C4"></div>
       <div class="form-group">
         <label>大類（儀器分類）</label>
         <select id="bom_category">
@@ -503,6 +503,17 @@
             <option value="cryostat">冷凍切片機</option>
             <option value="stainer">染色機</option>
           </optgroup>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>子類別 <span class="text-muted text-small">（僅數位病理需填，例：掃描儀、AI 分析平台、細胞遺傳學）</span></label>
+        <input type="text" id="bom_subcategory" placeholder="掃描儀">
+      </div>
+      <div class="form-group">
+        <label>產品目錄狀態</label>
+        <select id="bom_active">
+          <option value="0">Coming Soon（灰色，不可點選）</option>
+          <option value="1">可配置報價（綠色，可點選）</option>
         </select>
       </div>
       <div class="form-group">

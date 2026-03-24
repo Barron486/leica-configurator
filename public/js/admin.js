@@ -725,20 +725,20 @@ async function loadBoms() {
   };
   tbody.innerHTML = boms.map(b => `
     <tr>
-      <td><strong>${b.name}</strong></td>
+      <td><strong>${b.name}</strong>${b.subcategory ? `<br><span class="text-small text-muted">${b.subcategory}</span>` : ''}</td>
       <td class="text-small" style="font-family:var(--font-mono);font-size:11px;color:#555">${categoryLabels[b.instrument_category] || '—'}</td>
       <td class="text-small text-muted">${b.description || '—'}</td>
       <td style="text-align:center">${b.item_count}</td>
       <td class="price-cost">${b.total_cost > 0 ? formatPrice(b.total_cost) : '—'}</td>
       <td class="price-suggest">${b.total_suggested > 0 ? formatPrice(b.total_suggested) : '—'}</td>
       <td>
-        <span class="status-badge" style="background:${b.active ? '#D4EDDA':'#F8D7DA'}; color:${b.active ? '#155724':'#721C24'}">
-          ${b.active ? '啟用' : '停用'}
+        <span class="status-badge" style="background:${b.active ? '#D4EDDA':'#E2E3E5'}; color:${b.active ? '#155724':'#6C757D'}">
+          ${b.active ? '可配置' : 'Coming Soon'}
         </span>
       </td>
       <td style="display:flex; gap:6px">
         <button class="btn btn-outline btn-sm" onclick="openBomDetail(${b.id}, '${escapeJs(b.name)}')">明細</button>
-        <button class="btn btn-outline btn-sm" onclick="openEditBom(${b.id}, '${escapeJs(b.name)}', '${escapeJs(b.description||'')}', ${b.active}, '${b.instrument_category||''}', '${escapeJs(b.short_description||'')}')">編輯</button>
+        <button class="btn btn-outline btn-sm" onclick="openEditBom(${b.id}, '${escapeJs(b.name)}', '${escapeJs(b.description||'')}', ${b.active}, '${b.instrument_category||''}', '${escapeJs(b.short_description||'')}', '${escapeJs(b.subcategory||'')}')">編輯</button>
         <button class="btn btn-outline btn-sm" style="color:#DC3545; border-color:#DC3545" onclick="deleteBom(${b.id}, '${escapeJs(b.name)}')">刪除</button>
       </td>
     </tr>
@@ -750,17 +750,21 @@ function openAddBom() {
   document.getElementById('bom_name').value = '';
   document.getElementById('bom_desc').value = '';
   document.getElementById('bom_category').value = '';
+  document.getElementById('bom_subcategory').value = '';
+  document.getElementById('bom_active').value = '0';
   document.getElementById('bom_short_desc').value = '';
   document.getElementById('bomModalTitle').textContent = '新增 BOM';
   document.getElementById('bomModalSaveBtn').textContent = '新增';
   document.getElementById('bomModal').classList.add('open');
 }
 
-function openEditBom(id, name, desc, active, category = '', shortDesc = '') {
+function openEditBom(id, name, desc, active, category = '', shortDesc = '', subcategory = '') {
   document.getElementById('bom_id').value = id;
   document.getElementById('bom_name').value = name;
   document.getElementById('bom_desc').value = desc;
   document.getElementById('bom_category').value = category;
+  document.getElementById('bom_subcategory').value = subcategory;
+  document.getElementById('bom_active').value = active ? '1' : '0';
   document.getElementById('bom_short_desc').value = shortDesc;
   document.getElementById('bomModalTitle').textContent = '編輯 BOM';
   document.getElementById('bomModalSaveBtn').textContent = '儲存';
@@ -776,10 +780,12 @@ async function saveBom() {
     name,
     description:          document.getElementById('bom_desc').value.trim(),
     instrument_category:  document.getElementById('bom_category').value,
+    subcategory:          document.getElementById('bom_subcategory').value.trim(),
     short_description:    document.getElementById('bom_short_desc').value.trim(),
+    active:               parseInt(document.getElementById('bom_active').value),
   };
   const res  = id
-    ? await apiFetch(`/api/admin/boms/${id}`, { method: 'PUT', body: JSON.stringify({ ...body, active: 1 }) })
+    ? await apiFetch(`/api/admin/boms/${id}`, { method: 'PUT', body: JSON.stringify(body) })
     : await apiFetch('/api/admin/boms', { method: 'POST', body: JSON.stringify(body) });
 
   if (!res || !res.ok) { showToast('儲存失敗', 'error'); return; }
