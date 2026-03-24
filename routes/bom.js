@@ -28,7 +28,7 @@ router.get('/', adminOnly, (req, res) => {
   const db = getDb();
   const boms = db.prepare(`
     SELECT b.*,
-      COUNT(bi.id) AS item_count,
+      COUNT(DISTINCT bi.id) AS item_count,
       COALESCE(SUM(pr.cost_price      * bi.quantity), 0) AS total_cost,
       COALESCE(SUM(pr.suggested_price * bi.quantity), 0) AS total_suggested,
       COALESCE(SUM(pr.retail_price    * bi.quantity), 0) AS total_retail

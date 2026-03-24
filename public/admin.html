@@ -62,6 +62,7 @@
     <button class="tab-btn" onclick="switchTab('bom')">📋 BOM 管理</button>
     <button class="tab-btn" id="tab-btn-approvals" onclick="switchTab('approvals')">🔐 審批人員</button>
     <button class="tab-btn" id="tab-btn-import" onclick="switchTab('import')">📥 匯入產品</button>
+    <button class="tab-btn" onclick="switchTab('catalog')">🗂️ 目錄管理</button>
   </div>
 
   <!-- Tab: Quotes -->
@@ -310,6 +311,31 @@
       <button class="btn btn-primary" style="margin-top:16px" onclick="resetImport()">繼續匯入</button>
     </div>
   </div>
+
+  <!-- Tab: Catalog Items -->
+  <div id="tab-catalog" class="tab-panel">
+    <div class="flex-between" style="margin-bottom:16px">
+      <strong>產品目錄管理</strong>
+      <button class="btn btn-primary btn-sm" onclick="openAddCatalogItem()">+ 新增項目</button>
+    </div>
+    <div class="card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>名稱</th>
+            <th>大類</th>
+            <th>子類別</th>
+            <th>簡短說明</th>
+            <th>狀態</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="catalogBody">
+          <tr><td colspan="6" class="text-muted">載入中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div><!-- /content wrapper -->
 
     </div><!-- /main-content -->
@@ -547,6 +573,62 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('productModal')">取消</button>
       <button class="btn btn-primary" id="productModalSaveBtn" onclick="saveProduct()">新增</button>
+    </div>
+  </div>
+</div>
+
+<!-- Catalog Item Modal -->
+<div class="modal-overlay" id="catalogModal">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <h3 id="catalogModalTitle">新增目錄項目</h3>
+      <button class="modal-close" onclick="closeModal('catalogModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cat_id">
+      <div class="form-group"><label>名稱 *</label><input type="text" id="cat_name" placeholder="例：Aperio GT 450"></div>
+      <div class="form-group">
+        <label>大類 *</label>
+        <select id="cat_category">
+          <optgroup label="數位病理">
+            <option value="digital_pathology">數位病理</option>
+          </optgroup>
+          <optgroup label="組織病理設備">
+            <option value="tissue_processor">脫水機</option>
+            <option value="embedding_center">包埋機</option>
+            <option value="microtome">切片機（石蠟）</option>
+            <option value="cryostat">冷凍切片機</option>
+            <option value="stainer">染色機</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>子類別 <span class="text-muted text-small">（選填，如：掃描儀、AI 分析平台）</span></label>
+        <input type="text" id="cat_subcategory" placeholder="掃描儀">
+      </div>
+      <div class="form-group">
+        <label>狀態</label>
+        <select id="cat_status">
+          <option value="coming_soon">Coming Soon（灰色，不可點選）</option>
+          <option value="available">可配置報價（綠色，可點選）</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>簡短說明 <span class="text-muted text-small">（顯示在卡片上，30 字以內）</span></label>
+        <input type="text" id="cat_short_desc" placeholder="例：高通量全玻片掃描儀">
+      </div>
+      <div class="form-group" id="cat_url_group">
+        <label>配置頁網址 <span class="text-muted text-small">（狀態為可配置時填寫）</span></label>
+        <input type="text" id="cat_url" placeholder="/index.html">
+      </div>
+      <div class="form-group">
+        <label>排序</label>
+        <input type="number" id="cat_sort" value="99" style="width:80px">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('catalogModal')">取消</button>
+      <button class="btn btn-primary" id="catalogModalSaveBtn" onclick="saveCatalogItem()">儲存</button>
     </div>
   </div>
 </div>

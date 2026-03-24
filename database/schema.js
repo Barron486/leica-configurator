@@ -88,6 +88,19 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS catalog_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      instrument_category TEXT NOT NULL,
+      subcategory TEXT DEFAULT '',
+      short_description TEXT DEFAULT '',
+      status TEXT DEFAULT 'coming_soon' CHECK(status IN ('available','coming_soon')),
+      configurator_url TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 99,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS bom_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       bom_id INTEGER NOT NULL REFERENCES boms(id) ON DELETE CASCADE,
@@ -235,6 +248,48 @@ function _migrate(db) {
         console.log('Migration 6b: added boms.short_description');
       }
     } catch(e) { console.error('Migration 6 error:', e.message); }
+
+    // 7. 初始化 catalog_items（若空則 seed）
+    try {
+      const cnt = db.prepare("SELECT COUNT(*) AS c FROM catalog_items").get();
+      if (cnt.c === 0) {
+        const ins = db.prepare(`INSERT INTO catalog_items (name, instrument_category, subcategory, status, configurator_url, sort_order) VALUES (?,?,?,?,?,?)`);
+        const seed = db.transaction(() => {
+          // Digital Pathology - WSI
+          ins.run('Aperio GT 450','digital_pathology','掃描儀','coming_soon','',1);
+          ins.run('Aperio GT 180','digital_pathology','掃描儀','coming_soon','',2);
+          ins.run('Aperio CS5','digital_pathology','掃描儀','coming_soon','',3);
+          ins.run('Aperio FL','digital_pathology','掃描儀','coming_soon','',4);
+          // Digital Pathology - AI
+          ins.run('Aperio HALO AP','digital_pathology','AI 分析平台','coming_soon','',5);
+          ins.run('HALO AI','digital_pathology','AI 分析平台','coming_soon','',6);
+          // Digital Pathology - Cyto
+          ins.run('CytoVision','digital_pathology','細胞遺傳學','coming_soon','',7);
+          ins.run('CytoInsight AI','digital_pathology','細胞遺傳學','coming_soon','',8);
+          // Tissue Processor
+          ins.run('HistoCore PELORIS 3','tissue_processor','','coming_soon','',1);
+          ins.run('HistoCore PEGASUS','tissue_processor','','coming_soon','',2);
+          ins.run('HistoCore PEARL','tissue_processor','','coming_soon','',3);
+          // Embedding Center
+          ins.run('Leica Arcadia C & S','embedding_center','','coming_soon','',1);
+          // Microtome
+          ins.run('HistoCore AUTOCUT','microtome','','coming_soon','',1);
+          ins.run('HistoCore MULTICUT','microtome','','available','/index.html',2);
+          ins.run('HistoCore BIOCUT','microtome','','coming_soon','',3);
+          // Cryostat
+          ins.run('Leica CM1950','cryostat','','coming_soon','',1);
+          ins.run('Leica CM1860','cryostat','','coming_soon','',2);
+          ins.run('Leica CM3050 S','cryostat','','coming_soon','',3);
+          // Stainer
+          ins.run('HistoCore SPECTRA ST','stainer','','coming_soon','',1);
+          ins.run('Leica ST5010','stainer','','coming_soon','',2);
+          ins.run('HistoCore CHROMAX','stainer','','coming_soon','',3);
+          ins.run('Leica ST4020','stainer','','coming_soon','',4);
+        });
+        seed();
+        console.log('Migration 7: seeded catalog_items');
+      }
+    } catch(e) { console.error('Migration 7 error:', e.message); }
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }

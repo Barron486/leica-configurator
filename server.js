@@ -18,6 +18,7 @@ const adminRoutes   = require('./routes/admin');
 const importRoutes  = require('./routes/import');
 const bomRoutes      = require('./routes/bom');
 const approvalRoutes = require('./routes/approvals');
+const catalogRoutes  = require('./routes/catalog');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -92,6 +93,7 @@ app.use('/api/products',      productRoutes);
 app.use('/api/quotes',        quoteRoutes);
 app.use('/api/admin/import',  importRoutes);
 app.use('/api/admin/boms',    bomRoutes);
+app.use('/api/admin/catalog', catalogRoutes);
 app.use('/api/approvals',    approvalRoutes);
 app.use('/api/admin',         adminRoutes);
 

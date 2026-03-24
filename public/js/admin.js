@@ -20,7 +20,7 @@ let _currentUser = null;
   if (!ADMIN_ONLY_ROLES.includes(user.role)) {
     document.querySelectorAll('.tab-btn').forEach(btn => {
       const tab = btn.getAttribute('onclick')?.match(/switchTab\('(\w+)'\)/)?.[1];
-      if (['pricing', 'products', 'users', 'bom', 'import'].includes(tab)) btn.style.display = 'none';
+      if (['pricing', 'products', 'users', 'bom', 'import', 'catalog'].includes(tab)) btn.style.display = 'none';
       // PM 只能看審批人員
       if (_currentUser?.role === 'pm' && tab !== 'approvals') btn.style.display = 'none';
     });
@@ -43,6 +43,7 @@ function switchTab(name) {
   if (name === 'users')     loadUsers();
   if (name === 'bom')       loadBoms();
   if (name === 'approvals') loadChain();
+  if (name === 'catalog')   loadCatalogItems();
 }
 
 // ── Quotes ────────────────────────────────────────────────────
@@ -833,4 +834,95 @@ function resetImport() {
   document.getElementById('importStep2').style.display = 'none';
   document.getElementById('importStep3').style.display = 'none';
   resetImportUI();
+}
+
+// ── Catalog Item Management ────────────────────────────────────
+const CATALOG_CATEGORY_LABELS = {
+  digital_pathology: '數位病理',
+  tissue_processor: '脫水機', embedding_center: '包埋機',
+  microtome: '切片機（石蠟）', cryostat: '冷凍切片機', stainer: '染色機',
+};
+
+async function loadCatalogItems() {
+  const res = await apiFetch('/api/admin/catalog');
+  if (!res || !res.ok) return;
+  const items = await res.json();
+  const tbody = document.getElementById('catalogBody');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted">尚無項目</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(c => `
+    <tr>
+      <td><strong>${c.name}</strong></td>
+      <td class="text-small">${CATALOG_CATEGORY_LABELS[c.instrument_category]||c.instrument_category}</td>
+      <td class="text-small text-muted">${c.subcategory||'—'}</td>
+      <td class="text-small text-muted">${c.short_description||'—'}</td>
+      <td>
+        <span class="status-badge" style="background:${c.status==='available'?'#D4EDDA':'#F0F0F0'}; color:${c.status==='available'?'#155724':'#666'}">
+          ${c.status==='available'?'配置報價':'Coming Soon'}
+        </span>
+        ${!c.active ? '<span class="status-badge" style="background:#F8D7DA;color:#721C24;margin-left:4px">隱藏</span>' : ''}
+      </td>
+      <td style="display:flex; gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="openEditCatalogItem(${c.id},'${escapeJs(c.name)}','${c.instrument_category}','${escapeJs(c.subcategory||'')}','${escapeJs(c.short_description||'')}','${c.status}','${escapeJs(c.configurator_url||'')}',${c.sort_order},${c.active})">編輯</button>
+        <button class="btn btn-outline btn-sm" style="color:#DC3545;border-color:#DC3545" onclick="deleteCatalogItem(${c.id},'${escapeJs(c.name)}')">刪除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openAddCatalogItem() {
+  document.getElementById('cat_id').value = '';
+  ['cat_name','cat_subcategory','cat_short_desc','cat_url'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('cat_category').value = 'microtome';
+  document.getElementById('cat_status').value = 'coming_soon';
+  document.getElementById('cat_sort').value = '99';
+  document.getElementById('catalogModalTitle').textContent = '新增目錄項目';
+  document.getElementById('catalogModal').classList.add('open');
+}
+
+function openEditCatalogItem(id, name, category, subcategory, shortDesc, status, url, sort, active) {
+  document.getElementById('cat_id').value = id;
+  document.getElementById('cat_name').value = name;
+  document.getElementById('cat_category').value = category;
+  document.getElementById('cat_subcategory').value = subcategory;
+  document.getElementById('cat_short_desc').value = shortDesc;
+  document.getElementById('cat_status').value = status;
+  document.getElementById('cat_url').value = url;
+  document.getElementById('cat_sort').value = sort;
+  document.getElementById('catalogModalTitle').textContent = '編輯目錄項目';
+  document.getElementById('catalogModal').classList.add('open');
+}
+
+async function saveCatalogItem() {
+  const id = document.getElementById('cat_id').value;
+  const name = document.getElementById('cat_name').value.trim();
+  const instrument_category = document.getElementById('cat_category').value;
+  if (!name || !instrument_category) { showToast('名稱與類別為必填', 'error'); return; }
+  const body = {
+    name,
+    instrument_category,
+    subcategory:       document.getElementById('cat_subcategory').value.trim(),
+    short_description: document.getElementById('cat_short_desc').value.trim(),
+    status:            document.getElementById('cat_status').value,
+    configurator_url:  document.getElementById('cat_url').value.trim(),
+    sort_order:        parseInt(document.getElementById('cat_sort').value)||99,
+    active: 1,
+  };
+  const res = id
+    ? await apiFetch(`/api/admin/catalog/${id}`, { method:'PUT', body: JSON.stringify(body) })
+    : await apiFetch('/api/admin/catalog', { method:'POST', body: JSON.stringify(body) });
+  if (!res || !res.ok) { showToast('儲存失敗', 'error'); return; }
+  closeModal('catalogModal');
+  showToast(id ? '已更新' : '已新增', 'success');
+  loadCatalogItems();
+}
+
+async function deleteCatalogItem(id, name) {
+  if (!confirm(`確定刪除「${name}」？`)) return;
+  const res = await apiFetch(`/api/admin/catalog/${id}`, { method:'DELETE' });
+  if (!res || !res.ok) { showToast('刪除失敗','error'); return; }
+  showToast('已刪除','success');
+  loadCatalogItems();
 }
