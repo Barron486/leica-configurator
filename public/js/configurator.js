@@ -91,10 +91,31 @@ function _refreshInvoiceTotal() {
   const res = await apiFetch('/api/products');
   if (!res || !res.ok) return;
   products = await res.json();
-
-  // Pre-select base unit + all included items (qty = 1)
-  products.filter(p => p.is_base_unit || p.is_included_in_base).forEach(p => selected.set(p.id, 1));
   baseProduct = products.find(p => p.is_base_unit);
+
+  // 從 URL ?bom=<id> 讀取指定 BOM，預選其品項
+  const bomId = new URLSearchParams(location.search).get('bom');
+  if (!bomId) {
+    // 未帶 BOM 參數時，提示用戶先到產品目錄選擇
+    document.getElementById('productList').innerHTML = `
+      <div style="text-align:center;padding:40px 20px;color:#888">
+        <div style="font-size:32px;margin-bottom:12px">📦</div>
+        <div style="font-weight:600;font-size:15px;color:#333;margin-bottom:8px">請先選擇產品</div>
+        <div style="font-size:13px;margin-bottom:20px">請從產品目錄選擇要配置的儀器，再進行報價配置。</div>
+        <a href="/products.html" class="btn btn-red" style="display:inline-block;text-decoration:none">前往產品目錄</a>
+      </div>`;
+    return;
+  }
+  if (bomId) {
+    const bomRes = await apiFetch(`/api/admin/boms/${bomId}/config`);
+    if (bomRes && bomRes.ok) {
+      const { bom, items } = await bomRes.json();
+      items.forEach(item => selected.set(item.product_id, item.quantity));
+      // 顯示 BOM 名稱於頁首
+      const titleEl = document.querySelector('.main-topbar-title');
+      if (titleEl && bom.name) titleEl.textContent = bom.name;
+    }
+  }
 
   renderProducts();
   renderSummary();

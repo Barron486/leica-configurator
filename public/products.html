@@ -300,14 +300,14 @@
           const block = document.getElementById('block-digital_pathology');
           if (block) {
             block.style.display = '';
-            appendProductCard(document.getElementById('grid-digital_pathology'), b.name, b.short_description, 'available', '/index.html');
+            appendProductCard(document.getElementById('grid-digital_pathology'), b.name, b.short_description, 'available', `/index.html?bom=${b.id}`);
           }
         } else {
           const grid = document.getElementById('grid-' + b.instrument_category);
           if (grid) {
             const block = document.getElementById('block-' + b.instrument_category);
             if (block) block.style.display = '';
-            appendProductCard(grid, b.name, b.short_description, 'available', '/index.html');
+            appendProductCard(grid, b.name, b.short_description, 'available', `/index.html?bom=${b.id}`);
           }
         }
       }
