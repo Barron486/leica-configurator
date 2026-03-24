@@ -13,6 +13,18 @@ function adminOnly(req, res, next) {
   next();
 }
 
+// 依 role_permissions 表檢查功能權限（admin/super_admin 直接放行）
+function perm(key) {
+  return (req, res, next) => {
+    if (ADMIN_ROLES.includes(req.user?.role)) return next();
+    const db = getDb();
+    const rp = db.prepare('SELECT * FROM role_permissions WHERE role=?').get(req.user?.role);
+    db.close();
+    if (!rp || !rp[key]) return res.status(403).json({ error: '無此功能權限' });
+    next();
+  };
+}
+
 function reviewerOnly(req, res, next) {
   const role = req.user?.role;
   if (!REVIEWER_ROLES.includes(role)) {
@@ -139,7 +151,7 @@ router.get('/products', reviewerOnly, (req, res) => {
   res.json(result);
 });
 
-router.post('/products', adminOnly, (req, res) => {
+router.post('/products', perm('manage_products'), (req, res) => {
   const { catalog_number, name_zh, name_en, category, description, notes, sort_order, pm_user_id } = req.body;
   if (!catalog_number || !name_zh || !category) {
     return res.status(400).json({ error: '料號、中文名稱、類別為必填' });
@@ -155,7 +167,7 @@ router.post('/products', adminOnly, (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid });
 });
 
-router.put('/products/:id', adminOnly, (req, res) => {
+router.put('/products/:id', perm('manage_products'), (req, res) => {
   const { name_zh, name_en, category, description, notes, sort_order, active, pm_user_id } = req.body;
   const db = getDb();
   db.prepare(`
@@ -167,7 +179,7 @@ router.put('/products/:id', adminOnly, (req, res) => {
 });
 
 // ── Pricing ──────────────────────────────────────────────────
-router.put('/pricing/:product_id', adminOnly, (req, res) => {
+router.put('/pricing/:product_id', perm('manage_pricing'), (req, res) => {
   const { cost_price, min_sell_price, suggested_price, retail_price, currency, notes } = req.body;
   const db = getDb();
   db.prepare(`
@@ -182,14 +194,14 @@ router.put('/pricing/:product_id', adminOnly, (req, res) => {
 });
 
 // ── Users ────────────────────────────────────────────────────
-router.get('/users', adminOnly, (req, res) => {
+router.get('/users', perm('manage_users'), (req, res) => {
   const db = getDb();
   const rows = db.prepare('SELECT id, username, role, display_name, email, quote_prefix, created_at FROM users ORDER BY id').all();
   db.close();
   res.json(rows);
 });
 
-router.post('/users', adminOnly, (req, res) => {
+router.post('/users', perm('manage_users'), (req, res) => {
   const { username, password, role, display_name, email, quote_prefix } = req.body;
   if (!username || !password || !role) return res.status(400).json({ error: '帳號、密碼、角色為必填' });
   const hash = bcrypt.hashSync(password, 10);
@@ -205,7 +217,7 @@ router.post('/users', adminOnly, (req, res) => {
   }
 });
 
-router.put('/users/:id', adminOnly, (req, res) => {
+router.put('/users/:id', perm('manage_users'), (req, res) => {
   const { role, display_name, email, password, quote_prefix } = req.body;
   const prefix = (quote_prefix || '').toUpperCase();
   const db = getDb();
@@ -248,6 +260,15 @@ router.get('/quotes', reviewerOnly, (req, res) => {
 });
 
 // ── Role Permissions ─────────────────────────────────────────
+
+// 取得當前用戶角色的權限（任何已登入用戶可用）
+router.get('/role-permissions/me', (req, res) => {
+  const db = getDb();
+  const rp = db.prepare('SELECT * FROM role_permissions WHERE role=?').get(req.user?.role);
+  db.close();
+  res.json(rp || {});
+});
+
 router.get('/role-permissions', adminOnly, (req, res) => {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM role_permissions ORDER BY role').all();

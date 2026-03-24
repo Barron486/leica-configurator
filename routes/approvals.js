@@ -5,11 +5,15 @@ const { getDb } = require('../database/schema');
 
 const router = express.Router();
 
-// 所有登入用戶都能取得審批鏈；admin / super_admin 可修改
+const ADMIN_ROLES = ['admin', 'super_admin'];
+
+// 所有登入用戶都能取得審批鏈；有 manage_approval 權限才可修改
 function canManage(req, res, next) {
-  if (!['admin', 'super_admin'].includes(req.user?.role)) {
-    return res.status(403).json({ error: '無權限管理審批鏈' });
-  }
+  if (ADMIN_ROLES.includes(req.user?.role)) return next();
+  const db = getDb();
+  const rp = db.prepare('SELECT manage_approval FROM role_permissions WHERE role=?').get(req.user?.role);
+  db.close();
+  if (!rp?.manage_approval) return res.status(403).json({ error: '無審批鏈管理權限' });
   next();
 }
 

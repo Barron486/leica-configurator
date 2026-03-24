@@ -9,6 +9,16 @@ const { getDb } = require('../database/schema');
 const router  = express.Router();
 const upload  = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+const ADMIN_ROLES = ['admin', 'super_admin'];
+function permImport(req, res, next) {
+  if (ADMIN_ROLES.includes(req.user?.role)) return next();
+  const db = getDb();
+  const rp = db.prepare('SELECT import_products FROM role_permissions WHERE role=?').get(req.user?.role);
+  db.close();
+  if (!rp?.import_products) return res.status(403).json({ error: '無匯入產品權限' });
+  next();
+}
+
 const VALID_CATEGORIES = [
   'base','orientation','clamping','holder',
   'blade_base','blade_holder','blade','cooling','lighting','accessory',
@@ -51,7 +61,7 @@ const SYSTEM_PROMPT = `你是 Leica 醫療設備產品資料分析師。
 
 // ── POST /api/admin/import/preview ────────────────────────────
 // 上傳 Excel → Claude 分析 → 回傳預覽資料（不寫入 DB）
-router.post('/preview', upload.single('file'), async (req, res) => {
+router.post('/preview', permImport, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '請上傳 Excel 檔案' });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -127,7 +137,7 @@ ${JSON.stringify(rows, null, 2)}
 
 // ── POST /api/admin/import/confirm ────────────────────────────
 // 接受前端回傳的 products 陣列 → 寫入 DB
-router.post('/confirm', (req, res) => {
+router.post('/confirm', permImport, (req, res) => {
   const { products, include_pricing } = req.body;
   if (!Array.isArray(products) || !products.length) {
     return res.status(400).json({ error: '無產品資料' });

@@ -5,8 +5,17 @@ const { getDb } = require('../database/schema');
 
 const router = express.Router();
 
+const ADMIN_ROLES = ['admin', 'super_admin'];
 function adminOnly(req, res, next) {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: '需要管理員權限' });
+  if (!ADMIN_ROLES.includes(req.user?.role)) return res.status(403).json({ error: '需要管理員權限' });
+  next();
+}
+function permBom(req, res, next) {
+  if (ADMIN_ROLES.includes(req.user?.role)) return next();
+  const db = getDb();
+  const rp = db.prepare('SELECT manage_bom FROM role_permissions WHERE role=?').get(req.user?.role);
+  db.close();
+  if (!rp?.manage_bom) return res.status(403).json({ error: '無 BOM 管理權限' });
   next();
 }
 
@@ -43,7 +52,7 @@ router.get('/', adminOnly, (req, res) => {
 });
 
 // ── POST /api/admin/boms ──────────────────────────────────────
-router.post('/', adminOnly, (req, res) => {
+router.post('/', permBom, (req, res) => {
   const { name, description, instrument_category, short_description } = req.body;
   if (!name) return res.status(400).json({ error: 'BOM 名稱為必填' });
   const db = getDb();
@@ -61,7 +70,7 @@ router.post('/', adminOnly, (req, res) => {
 });
 
 // ── PUT /api/admin/boms/:id ───────────────────────────────────
-router.put('/:id', adminOnly, (req, res) => {
+router.put('/:id', permBom, (req, res) => {
   const { name, description, active, instrument_category, short_description } = req.body;
   if (!name) return res.status(400).json({ error: 'BOM 名稱為必填' });
   const db = getDb();
@@ -79,7 +88,7 @@ router.put('/:id', adminOnly, (req, res) => {
 });
 
 // ── DELETE /api/admin/boms/:id ────────────────────────────────
-router.delete('/:id', adminOnly, (req, res) => {
+router.delete('/:id', permBom, (req, res) => {
   const db = getDb();
   db.prepare('DELETE FROM boms WHERE id=?').run(req.params.id);
   db.close();
@@ -109,7 +118,7 @@ router.get('/:id/items', adminOnly, (req, res) => {
 });
 
 // ── POST /api/admin/boms/:id/items ───────────────────────────
-router.post('/:id/items', adminOnly, (req, res) => {
+router.post('/:id/items', permBom, (req, res) => {
   const { product_id, quantity, notes } = req.body;
   if (!product_id) return res.status(400).json({ error: '產品為必填' });
   const db = getDb();
@@ -127,7 +136,7 @@ router.post('/:id/items', adminOnly, (req, res) => {
 });
 
 // ── PUT /api/admin/boms/:id/items/:itemId ────────────────────
-router.put('/:id/items/:itemId', adminOnly, (req, res) => {
+router.put('/:id/items/:itemId', permBom, (req, res) => {
   const { quantity, notes } = req.body;
   const db = getDb();
   db.prepare(
@@ -138,7 +147,7 @@ router.put('/:id/items/:itemId', adminOnly, (req, res) => {
 });
 
 // ── DELETE /api/admin/boms/:id/items/:itemId ─────────────────
-router.delete('/:id/items/:itemId', adminOnly, (req, res) => {
+router.delete('/:id/items/:itemId', permBom, (req, res) => {
   const db = getDb();
   db.prepare('DELETE FROM bom_items WHERE id=? AND bom_id=?').run(req.params.itemId, req.params.id);
   db.close();

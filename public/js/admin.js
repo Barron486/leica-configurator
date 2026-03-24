@@ -22,18 +22,56 @@ let _currentUser = null;
 
   loadNotifications();
 
-  // 非 admin 隱藏管理類 tabs
-  if (!ADMIN_ONLY_ROLES.includes(user.role)) {
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      const tab = btn.getAttribute('onclick')?.match(/switchTab\('(\w+)'\)/)?.[1];
-      if (['pricing', 'products', 'users', 'bom', 'import', 'catalog'].includes(tab)) btn.style.display = 'none';
-      // PM 只能看審批人員
-      if (_currentUser?.role === 'pm' && tab !== 'approvals') btn.style.display = 'none';
-    });
-  }
+  // 依 role_permissions 動態控制 tabs
+  await applyRolePermTabs(user);
 
   loadQuotes();
 })();
+
+// ── Role Permission Tab Control ───────────────────────────────
+// tab key → role_permissions 欄位對應
+const TAB_PERM_MAP = {
+  quotes:    'manage_quotes',
+  pricing:   'manage_pricing',
+  products:  'manage_products',
+  users:     'manage_users',
+  bom:       'manage_bom',
+  approvals: 'manage_approval',
+  import:    'import_products',
+  // roleperms / catalog → admin/super_admin only，不在此表
+};
+
+async function applyRolePermTabs(user) {
+  const isAdmin = ADMIN_ONLY_ROLES.includes(user.role);
+
+  if (isAdmin) {
+    // admin/super_admin 全部顯示
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.style.display = '');
+    return;
+  }
+
+  // 取得此角色的 role_permissions
+  const res = await apiFetch('/api/admin/role-permissions/me');
+  const rp = (res && res.ok) ? await res.json() : {};
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const tab = btn.getAttribute('onclick')?.match(/switchTab\('(\w+)'\)/)?.[1];
+    if (!tab) return;
+
+    // roleperms / catalog 非 admin 不顯示
+    if (tab === 'roleperms' || tab === 'catalog') {
+      btn.style.display = 'none';
+      return;
+    }
+
+    const permKey = TAB_PERM_MAP[tab];
+    if (permKey && !rp[permKey]) {
+      btn.style.display = 'none';
+    } else {
+      btn.style.display = '';
+    }
+  });
+}
 
 // ── Tab Switching ─────────────────────────────────────────────
 function switchTab(name) {
