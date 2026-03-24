@@ -19,18 +19,8 @@ function permBom(req, res, next) {
   next();
 }
 
-// ── GET /api/admin/boms/:id/config ───────────────────────────
-// 任何已登入用戶：給配置報價頁讀取 BOM 品項（只回傳 product_id + quantity）
-router.get('/:id/config', (req, res) => {
-  const db = getDb();
-  const bom = db.prepare('SELECT id, name, short_description FROM boms WHERE id=? AND active=1').get(req.params.id);
-  if (!bom) { db.close(); return res.status(404).json({ error: 'BOM 不存在' }); }
-  const items = db.prepare('SELECT product_id, quantity FROM bom_items WHERE bom_id=?').all(req.params.id);
-  db.close();
-  res.json({ bom, items });
-});
-
 // ── GET /api/admin/boms/catalog ──────────────────────────────
+// 靜態路由必須在 /:id 之前，否則 Express 會被 wildcard 攔截
 // 公開（任何已登入用戶）：給產品目錄頁使用，只回傳啟用中的 BOM
 router.get('/catalog', (req, res) => {
   const db = getDb();
@@ -40,6 +30,18 @@ router.get('/catalog', (req, res) => {
   `).all();
   db.close();
   res.json(boms);
+});
+
+// ── GET /api/admin/boms/:id/config ───────────────────────────
+// 任何已登入用戶：給配置報價頁讀取 BOM 品項（只回傳 product_id + quantity）
+// 注意：此路由必須放在 /catalog 之後，避免 wildcard 攔截靜態路由
+router.get('/:id/config', (req, res) => {
+  const db = getDb();
+  const bom = db.prepare('SELECT id, name, short_description FROM boms WHERE id=? AND active=1').get(req.params.id);
+  if (!bom) { db.close(); return res.status(404).json({ error: 'BOM 不存在' }); }
+  const items = db.prepare('SELECT product_id, quantity FROM bom_items WHERE bom_id=?').all(req.params.id);
+  db.close();
+  res.json({ bom, items });
 });
 
 // ── GET /api/admin/boms ───────────────────────────────────────
