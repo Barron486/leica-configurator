@@ -225,6 +225,16 @@
           </div>
         </div>
 
+        <!-- BOM 動態插入：數位病理 -->
+        <div class="category-block" id="block-digital_pathology" style="display:none">
+          <div class="category-label">
+            <span class="category-label-main">數位病理解決方案</span>
+            <span class="category-label-en">Digital Pathology Solutions</span>
+          </div>
+          <div class="category-sub">整合掃描、AI 分析與管理的完整配置方案</div>
+          <div class="product-grid" id="grid-digital_pathology"></div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -383,6 +393,9 @@
       boms.forEach(b => {
         const grid = document.getElementById('grid-' + b.instrument_category);
         if (!grid) return;
+        // 若是隱藏的 block（數位病理），先顯示
+        const block = document.getElementById('block-' + b.instrument_category);
+        if (block) block.style.display = '';
         const card = document.createElement('a');
         card.className = 'product-card';
         card.href = '/index.html';

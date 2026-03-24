@@ -648,6 +648,7 @@ async function loadBoms() {
     return;
   }
   const categoryLabels = {
+    digital_pathology: '數位病理',
     tissue_processor: '脫水機', embedding_center: '包埋機',
     microtome: '切片機（石蠟）', cryostat: '冷凍切片機', stainer: '染色機',
   };
