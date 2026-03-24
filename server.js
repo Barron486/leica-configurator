@@ -105,6 +105,15 @@ app.get('/{*path}', (req, res) => {
 });
 
 app.listen(PORT, () => {
+  const fs = require('fs');
+  const DB_PATH = process.env.DB_PATH ||
+    (process.env.RAILWAY_ENVIRONMENT ? '/data/leica.db' : require('path').join(__dirname, 'leica.db'));
+  const dbExists = fs.existsSync(DB_PATH);
   console.log(`\n🔬 Leica 配置選擇器已啟動`);
-  console.log(`   http://localhost:${PORT}\n`);
+  console.log(`   http://localhost:${PORT}`);
+  console.log(`   DB: ${DB_PATH} (${dbExists ? '✅ 檔案存在' : '⚠️  新建'})`);
+  if (process.env.RAILWAY_ENVIRONMENT && !DB_PATH.startsWith('/data/')) {
+    console.warn('   ⚠️  警告：Railway 環境但 DB 不在 /data/，請確認 Volume 已掛載到 /data');
+  }
+  console.log('');
 });
