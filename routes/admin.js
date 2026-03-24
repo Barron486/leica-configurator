@@ -184,10 +184,23 @@ router.patch('/products/:id/active', perm('manage_products'), (req, res) => {
 router.put('/products/:id', perm('manage_products'), (req, res) => {
   const { name_zh, name_en, category, description, notes, sort_order, active, pm_user_id } = req.body;
   const db = getDb();
+  // 先讀取現有資料，讓部分更新（如只傳 active）也能正常運作
+  const existing = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id);
+  if (!existing) { db.close(); return res.status(404).json({ error: '產品不存在' }); }
   db.prepare(`
     UPDATE products SET name_zh=?, name_en=?, category=?, description=?, notes=?, sort_order=?, active=?, pm_user_id=?
     WHERE id=?
-  `).run(name_zh, name_en || '', category, description || '', notes || '', sort_order, active ?? 1, pm_user_id || null, req.params.id);
+  `).run(
+    name_zh      ?? existing.name_zh,
+    name_en      ?? existing.name_en ?? '',
+    category     ?? existing.category,
+    description  ?? existing.description ?? '',
+    notes        ?? existing.notes ?? '',
+    sort_order   ?? existing.sort_order,
+    active       ?? existing.active,
+    pm_user_id   !== undefined ? pm_user_id : existing.pm_user_id,
+    req.params.id
+  );
   db.close();
   res.json({ message: '已更新' });
 });
