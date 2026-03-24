@@ -22,6 +22,9 @@ const approvalRoutes = require('./routes/approvals');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
+// Railway / reverse proxy 環境需要 trust proxy
+app.set('trust proxy', 1);
+
 // ── 安全 Headers（helmet）────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: {
