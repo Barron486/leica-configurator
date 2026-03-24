@@ -47,11 +47,17 @@ router.post('/', adminOnly, (req, res) => {
   const { name, description, instrument_category, short_description } = req.body;
   if (!name) return res.status(400).json({ error: 'BOM 名稱為必填' });
   const db = getDb();
-  const result = db.prepare(
-    'INSERT INTO boms (name, description, instrument_category, short_description) VALUES (?,?,?,?)'
-  ).run(name, description || '', instrument_category || '', short_description || '');
-  db.close();
-  res.status(201).json({ id: result.lastInsertRowid });
+  try {
+    const result = db.prepare(
+      'INSERT INTO boms (name, description, instrument_category, short_description) VALUES (?,?,?,?)'
+    ).run(name, description || '', instrument_category || '', short_description || '');
+    db.close();
+    res.status(201).json({ id: result.lastInsertRowid });
+  } catch(e) {
+    db.close();
+    console.error('BOM POST error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── PUT /api/admin/boms/:id ───────────────────────────────────
@@ -59,11 +65,17 @@ router.put('/:id', adminOnly, (req, res) => {
   const { name, description, active, instrument_category, short_description } = req.body;
   if (!name) return res.status(400).json({ error: 'BOM 名稱為必填' });
   const db = getDb();
-  db.prepare(
-    'UPDATE boms SET name=?, description=?, active=?, instrument_category=?, short_description=? WHERE id=?'
-  ).run(name, description || '', active ?? 1, instrument_category || '', short_description || '', req.params.id);
-  db.close();
-  res.json({ message: '已更新' });
+  try {
+    db.prepare(
+      'UPDATE boms SET name=?, description=?, active=?, instrument_category=?, short_description=? WHERE id=?'
+    ).run(name, description || '', active ?? 1, instrument_category || '', short_description || '', req.params.id);
+    db.close();
+    res.json({ message: '已更新' });
+  } catch(e) {
+    db.close();
+    console.error('BOM PUT error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── DELETE /api/admin/boms/:id ────────────────────────────────

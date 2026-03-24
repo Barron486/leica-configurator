@@ -82,6 +82,8 @@ function initSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       description TEXT,
+      instrument_category TEXT DEFAULT '',
+      short_description TEXT DEFAULT '',
       active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -213,19 +215,26 @@ function _migrate(db) {
     }
 
     // 5. users: 加入 quote_prefix 欄位
-    const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
-    if (!userCols.includes('quote_prefix')) {
-      db.exec("ALTER TABLE users ADD COLUMN quote_prefix TEXT DEFAULT ''");
-    }
+    try {
+      const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+      if (!userCols.includes('quote_prefix')) {
+        db.exec("ALTER TABLE users ADD COLUMN quote_prefix TEXT DEFAULT ''");
+        console.log('Migration 5: added users.quote_prefix');
+      }
+    } catch(e) { console.error('Migration 5 error:', e.message); }
 
     // 6. boms: 加入 instrument_category + short_description 欄位
-    const bomCols = db.prepare("PRAGMA table_info(boms)").all().map(c => c.name);
-    if (!bomCols.includes('instrument_category')) {
-      db.exec("ALTER TABLE boms ADD COLUMN instrument_category TEXT DEFAULT ''");
-    }
-    if (!bomCols.includes('short_description')) {
-      db.exec("ALTER TABLE boms ADD COLUMN short_description TEXT DEFAULT ''");
-    }
+    try {
+      const bomCols = db.prepare("PRAGMA table_info(boms)").all().map(c => c.name);
+      if (!bomCols.includes('instrument_category')) {
+        db.exec("ALTER TABLE boms ADD COLUMN instrument_category TEXT DEFAULT ''");
+        console.log('Migration 6a: added boms.instrument_category');
+      }
+      if (!bomCols.includes('short_description')) {
+        db.exec("ALTER TABLE boms ADD COLUMN short_description TEXT DEFAULT ''");
+        console.log('Migration 6b: added boms.short_description');
+      }
+    } catch(e) { console.error('Migration 6 error:', e.message); }
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }
