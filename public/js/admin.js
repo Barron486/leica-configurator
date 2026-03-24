@@ -647,9 +647,14 @@ async function loadBoms() {
     tbody.innerHTML = '<tr><td colspan="7" class="text-muted">尚無 BOM，請點右上角新增</td></tr>';
     return;
   }
+  const categoryLabels = {
+    tissue_processor: '脫水機', embedding_center: '包埋機',
+    microtome: '切片機（石蠟）', cryostat: '冷凍切片機', stainer: '染色機',
+  };
   tbody.innerHTML = boms.map(b => `
     <tr>
       <td><strong>${b.name}</strong></td>
+      <td class="text-small" style="font-family:var(--font-mono);font-size:11px;color:#555">${categoryLabels[b.instrument_category] || '—'}</td>
       <td class="text-small text-muted">${b.description || '—'}</td>
       <td style="text-align:center">${b.item_count}</td>
       <td class="price-cost">${b.total_cost > 0 ? formatPrice(b.total_cost) : '—'}</td>
@@ -661,7 +666,7 @@ async function loadBoms() {
       </td>
       <td style="display:flex; gap:6px">
         <button class="btn btn-outline btn-sm" onclick="openBomDetail(${b.id}, '${escapeJs(b.name)}')">明細</button>
-        <button class="btn btn-outline btn-sm" onclick="openEditBom(${b.id}, '${escapeJs(b.name)}', '${escapeJs(b.description||'')}', ${b.active})">編輯</button>
+        <button class="btn btn-outline btn-sm" onclick="openEditBom(${b.id}, '${escapeJs(b.name)}', '${escapeJs(b.description||'')}', ${b.active}, '${b.instrument_category||''}', '${escapeJs(b.short_description||'')}')">編輯</button>
         <button class="btn btn-outline btn-sm" style="color:#DC3545; border-color:#DC3545" onclick="deleteBom(${b.id}, '${escapeJs(b.name)}')">刪除</button>
       </td>
     </tr>
@@ -672,15 +677,19 @@ function openAddBom() {
   document.getElementById('bom_id').value = '';
   document.getElementById('bom_name').value = '';
   document.getElementById('bom_desc').value = '';
+  document.getElementById('bom_category').value = '';
+  document.getElementById('bom_short_desc').value = '';
   document.getElementById('bomModalTitle').textContent = '新增 BOM';
   document.getElementById('bomModalSaveBtn').textContent = '新增';
   document.getElementById('bomModal').classList.add('open');
 }
 
-function openEditBom(id, name, desc, active) {
+function openEditBom(id, name, desc, active, category = '', shortDesc = '') {
   document.getElementById('bom_id').value = id;
   document.getElementById('bom_name').value = name;
   document.getElementById('bom_desc').value = desc;
+  document.getElementById('bom_category').value = category;
+  document.getElementById('bom_short_desc').value = shortDesc;
   document.getElementById('bomModalTitle').textContent = '編輯 BOM';
   document.getElementById('bomModalSaveBtn').textContent = '儲存';
   document.getElementById('bomModal').classList.add('open');
@@ -691,7 +700,12 @@ async function saveBom() {
   const name = document.getElementById('bom_name').value.trim();
   if (!name) { showToast('BOM 名稱為必填', 'error'); return; }
 
-  const body = { name, description: document.getElementById('bom_desc').value.trim() };
+  const body = {
+    name,
+    description:          document.getElementById('bom_desc').value.trim(),
+    instrument_category:  document.getElementById('bom_category').value,
+    short_description:    document.getElementById('bom_short_desc').value.trim(),
+  };
   const res  = id
     ? await apiFetch(`/api/admin/boms/${id}`, { method: 'PUT', body: JSON.stringify({ ...body, active: 1 }) })
     : await apiFetch('/api/admin/boms', { method: 'POST', body: JSON.stringify(body) });

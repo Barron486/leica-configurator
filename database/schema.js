@@ -217,6 +217,15 @@ function _migrate(db) {
     if (!userCols.includes('quote_prefix')) {
       db.exec("ALTER TABLE users ADD COLUMN quote_prefix TEXT DEFAULT ''");
     }
+
+    // 6. boms: 加入 instrument_category + short_description 欄位
+    const bomCols = db.prepare("PRAGMA table_info(boms)").all().map(c => c.name);
+    if (!bomCols.includes('instrument_category')) {
+      db.exec("ALTER TABLE boms ADD COLUMN instrument_category TEXT DEFAULT ''");
+    }
+    if (!bomCols.includes('short_description')) {
+      db.exec("ALTER TABLE boms ADD COLUMN short_description TEXT DEFAULT ''");
+    }
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }

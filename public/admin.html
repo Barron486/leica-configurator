@@ -190,6 +190,7 @@
         <thead>
           <tr>
             <th>BOM 名稱</th>
+            <th>大類</th>
             <th>說明</th>
             <th>品項數</th>
             <th>成本合計</th>
@@ -199,7 +200,7 @@
           </tr>
         </thead>
         <tbody id="bomBody">
-          <tr><td colspan="7" class="text-muted">載入中…</td></tr>
+          <tr><td colspan="8" class="text-muted">載入中…</td></tr>
         </tbody>
       </table>
     </div>
@@ -422,7 +423,22 @@
     <div class="modal-body">
       <input type="hidden" id="bom_id">
       <div class="form-group"><label>BOM 名稱 *</label><input type="text" id="bom_name" placeholder="例：C4 標準配置"></div>
-      <div class="form-group"><label>說明</label><textarea id="bom_desc" rows="2"></textarea></div>
+      <div class="form-group">
+        <label>大類（儀器分類）</label>
+        <select id="bom_category">
+          <option value="">— 不顯示於產品目錄 —</option>
+          <option value="tissue_processor">脫水機</option>
+          <option value="embedding_center">包埋機</option>
+          <option value="microtome">切片機（石蠟）</option>
+          <option value="cryostat">冷凍切片機</option>
+          <option value="stainer">染色機</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>簡短說明 <span class="text-muted text-small">（顯示在產品目錄卡片上，建議 30 字以內）</span></label>
+        <input type="text" id="bom_short_desc" placeholder="例：標準石蠟切片配置，含刀片固定器與冷卻平台">
+      </div>
+      <div class="form-group"><label>內部備註</label><textarea id="bom_desc" rows="2"></textarea></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('bomModal')">取消</button>

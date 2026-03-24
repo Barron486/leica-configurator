@@ -250,7 +250,7 @@
             <span class="category-label-en">Tissue Processor</span>
           </div>
           <div class="category-sub">固定・脫水・透明・浸蠟全流程自動化</div>
-          <div class="product-grid">
+          <div class="product-grid" id="grid-tissue_processor">
             <a class="product-card coming-soon">
               <div class="product-name">HistoCore PELORIS 3</div>
               <span class="product-badge badge-coming">Coming Soon</span>
@@ -272,7 +272,7 @@
             <span class="category-label-en">Embedding Center</span>
           </div>
           <div class="category-sub">將組織封入石蠟塊，精準定向</div>
-          <div class="product-grid">
+          <div class="product-grid" id="grid-embedding_center">
             <a class="product-card coming-soon">
               <div class="product-name">Leica Arcadia C &amp; S</div>
               <span class="product-badge badge-coming">Coming Soon</span>
@@ -286,7 +286,7 @@
             <span class="category-label-en">Microtome</span>
           </div>
           <div class="category-sub">將石蠟塊切成 3–5 µm 薄片</div>
-          <div class="product-grid">
+          <div class="product-grid" id="grid-microtome">
             <a class="product-card coming-soon">
               <div class="product-name">HistoCore AUTOCUT</div>
               <span class="product-badge badge-coming">Coming Soon</span>
@@ -308,7 +308,7 @@
             <span class="category-label-en">Cryostat</span>
           </div>
           <div class="category-sub">術中快速診斷與研究級冷凍切片</div>
-          <div class="product-grid">
+          <div class="product-grid" id="grid-cryostat">
             <a class="product-card coming-soon">
               <div class="product-name">Leica CM1950</div>
               <span class="product-badge badge-coming">Coming Soon</span>
@@ -330,7 +330,7 @@
             <span class="category-label-en">Stainer</span>
           </div>
           <div class="category-sub">H&amp;E 及特殊染色自動化</div>
-          <div class="product-grid">
+          <div class="product-grid" id="grid-stainer">
             <a class="product-card coming-soon">
               <div class="product-name">HistoCore SPECTRA ST</div>
               <span class="product-badge badge-coming">Coming Soon</span>
@@ -369,7 +369,32 @@
     badge.textContent = ROLE_LABELS[user.role] || user.role;
     badge.className = `role-badge role-${user.role}`;
     if (user.role === 'admin') document.getElementById('adminLink').style.display = 'block';
+    loadCatalogBoms();
   })();
+
+  async function loadCatalogBoms() {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/admin/boms/catalog', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (!res.ok) return;
+      const boms = await res.json();
+      boms.forEach(b => {
+        const grid = document.getElementById('grid-' + b.instrument_category);
+        if (!grid) return;
+        const card = document.createElement('a');
+        card.className = 'product-card';
+        card.href = '/index.html';
+        card.innerHTML = `
+          ${b.short_description ? `<div style="font-size:11px;color:#666;margin-bottom:5px;line-height:1.4">${b.short_description}</div>` : ''}
+          <div class="product-name">${b.name}</div>
+          <span class="product-badge badge-available">配置報價</span>
+        `;
+        grid.appendChild(card);
+      });
+    } catch(e) { /* 靜默失敗 */ }
+  }
 </script>
 </body>
 </html>

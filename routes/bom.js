@@ -10,6 +10,18 @@ function adminOnly(req, res, next) {
   next();
 }
 
+// ── GET /api/admin/boms/catalog ──────────────────────────────
+// 公開（任何已登入用戶）：給產品目錄頁使用，只回傳啟用中的 BOM
+router.get('/catalog', (req, res) => {
+  const db = getDb();
+  const boms = db.prepare(`
+    SELECT id, name, description, short_description, instrument_category
+    FROM boms WHERE active=1 AND instrument_category != '' ORDER BY instrument_category, name
+  `).all();
+  db.close();
+  res.json(boms);
+});
+
 // ── GET /api/admin/boms ───────────────────────────────────────
 // 取得所有 BOM，含品項數與成本/建議報價合計
 router.get('/', adminOnly, (req, res) => {
@@ -32,24 +44,24 @@ router.get('/', adminOnly, (req, res) => {
 
 // ── POST /api/admin/boms ──────────────────────────────────────
 router.post('/', adminOnly, (req, res) => {
-  const { name, description } = req.body;
+  const { name, description, instrument_category, short_description } = req.body;
   if (!name) return res.status(400).json({ error: 'BOM 名稱為必填' });
   const db = getDb();
   const result = db.prepare(
-    'INSERT INTO boms (name, description) VALUES (?, ?)'
-  ).run(name, description || '');
+    'INSERT INTO boms (name, description, instrument_category, short_description) VALUES (?,?,?,?)'
+  ).run(name, description || '', instrument_category || '', short_description || '');
   db.close();
   res.status(201).json({ id: result.lastInsertRowid });
 });
 
 // ── PUT /api/admin/boms/:id ───────────────────────────────────
 router.put('/:id', adminOnly, (req, res) => {
-  const { name, description, active } = req.body;
+  const { name, description, active, instrument_category, short_description } = req.body;
   if (!name) return res.status(400).json({ error: 'BOM 名稱為必填' });
   const db = getDb();
   db.prepare(
-    'UPDATE boms SET name=?, description=?, active=? WHERE id=?'
-  ).run(name, description || '', active ?? 1, req.params.id);
+    'UPDATE boms SET name=?, description=?, active=?, instrument_category=?, short_description=? WHERE id=?'
+  ).run(name, description || '', active ?? 1, instrument_category || '', short_description || '', req.params.id);
   db.close();
   res.json({ message: '已更新' });
 });
