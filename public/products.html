@@ -341,20 +341,27 @@
     } else {
       a.className = 'product-card coming-soon';
     }
-    if (shortDesc) {
-      const desc = document.createElement('div');
-      desc.style.cssText = 'font-size:11px;color:#666;margin-bottom:5px;line-height:1.4';
-      desc.textContent = shortDesc;
-      a.appendChild(desc);
-    }
+    // 名稱永遠在最上方
     const nameEl = document.createElement('div');
     nameEl.className = 'product-name';
     nameEl.textContent = name;
     a.appendChild(nameEl);
-    const badge = document.createElement('span');
-    badge.className = 'product-badge ' + (status === 'available' ? 'badge-available' : 'badge-coming');
-    badge.textContent = status === 'available' ? '配置報價' : 'Coming Soon';
-    a.appendChild(badge);
+    // 描述在名稱下方（反灰）
+    if (shortDesc) {
+      const desc = document.createElement('div');
+      desc.style.cssText = 'font-size:11px;color:#999;margin-top:4px;line-height:1.4';
+      desc.textContent = shortDesc;
+      a.appendChild(desc);
+    }
+    // 僅 coming soon 顯示 badge，已啟用不顯示
+    if (status !== 'available') {
+      const badge = document.createElement('span');
+      badge.className = 'product-badge badge-coming';
+      badge.textContent = 'Coming Soon';
+      badge.style.marginTop = '6px';
+      badge.style.display = 'inline-block';
+      a.appendChild(badge);
+    }
     grid.appendChild(a);
   }
 </script>
