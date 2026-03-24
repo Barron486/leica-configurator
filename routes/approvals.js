@@ -5,9 +5,9 @@ const { getDb } = require('../database/schema');
 
 const router = express.Router();
 
-// 所有登入用戶都能取得審批鏈；sales + admin 可修改
+// 所有登入用戶都能取得審批鏈；admin / super_admin 可修改
 function canManage(req, res, next) {
-  if (!['admin', 'sales'].includes(req.user?.role)) {
+  if (!['admin', 'super_admin'].includes(req.user?.role)) {
     return res.status(403).json({ error: '無權限管理審批鏈' });
   }
   next();
@@ -33,7 +33,7 @@ router.get('/eligible', (req, res) => {
   const users = db.prepare(`
     SELECT u.id, u.display_name, u.username, u.role
     FROM users u
-    WHERE u.role IN ('admin','finance','management','gm','pm')
+    WHERE u.role IN ('admin','super_admin','finance','management','gm','pm')
       AND u.id NOT IN (SELECT user_id FROM approval_chain)
     ORDER BY u.role, u.display_name
   `).all();
@@ -47,9 +47,14 @@ router.post('/chain', canManage, (req, res) => {
   if (!user_id) return res.status(400).json({ error: '請選擇用戶' });
   const db = getDb();
   try {
+    // 確認目標用戶存在
+    const target = db.prepare('SELECT id FROM users WHERE id=?').get(user_id);
+    if (!target) { db.close(); return res.status(400).json({ error: '找不到指定用戶' }); }
+    // created_by 若當前用戶不存在則設為 NULL（避免 FK 失敗）
+    const creator = db.prepare('SELECT id FROM users WHERE id=?').get(req.user.id);
     const result = db.prepare(
       'INSERT INTO approval_chain (user_id, step_order, created_by) VALUES (?,?,?)'
-    ).run(user_id, step_order || 99, req.user.id);
+    ).run(user_id, step_order || 99, creator ? req.user.id : null);
     db.close();
     res.status(201).json({ id: result.lastInsertRowid });
   } catch(e) {
