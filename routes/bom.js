@@ -6,6 +6,8 @@ const { getDb } = require('../database/schema');
 const router = express.Router();
 
 const ADMIN_ROLES = ['admin', 'super_admin'];
+const READONLY_ROLES = ['customer', 'demo'];
+
 function adminOnly(req, res, next) {
   if (!ADMIN_ROLES.includes(req.user?.role)) return res.status(403).json({ error: '需要管理員權限' });
   next();
@@ -16,6 +18,11 @@ function permBom(req, res, next) {
   const rp = db.prepare('SELECT manage_bom FROM role_permissions WHERE role=?').get(req.user?.role);
   db.close();
   if (!rp?.manage_bom) return res.status(403).json({ error: '無 BOM 管理權限' });
+  next();
+}
+// customer / demo 只能看產品目錄，不能讀取 BOM 品項配置
+function notReadOnly(req, res, next) {
+  if (READONLY_ROLES.includes(req.user?.role)) return res.status(403).json({ error: '無存取權限' });
   next();
 }
 
@@ -35,7 +42,7 @@ router.get('/catalog', (req, res) => {
 // ── GET /api/admin/boms/:id/config ───────────────────────────
 // 任何已登入用戶：給配置報價頁讀取 BOM 品項（只回傳 product_id + quantity）
 // 注意：此路由必須放在 /catalog 之後，避免 wildcard 攔截靜態路由
-router.get('/:id/config', (req, res) => {
+router.get('/:id/config', notReadOnly, (req, res) => {
   const db = getDb();
   const bom = db.prepare('SELECT id, name, short_description FROM boms WHERE id=? AND active=1').get(req.params.id);
   if (!bom) { db.close(); return res.status(404).json({ error: 'BOM 不存在' }); }

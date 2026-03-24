@@ -83,6 +83,11 @@
 
 <script src="/js/auth.js"></script>
 <script>
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 let _currentTab = 'pending';
 let _quotes = [];
 
@@ -135,16 +140,16 @@ function renderTab(name) {
     <div class="card" style="margin-bottom:12px; cursor:pointer" onclick="openQuote(${q.id})">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; padding:16px">
         <div>
-          <div style="font-weight:700; font-size:15px; margin-bottom:4px">${q.quote_number}</div>
-          <div style="font-size:13px; color:#555">${q.customer_name}${q.customer_org ? ' · ' + q.customer_org : ''}</div>
-          ${q.case_notes ? `<div style="font-size:12px; color:#888; margin-top:4px">📋 ${q.case_notes}</div>` : ''}
+          <div style="font-weight:700; font-size:15px; margin-bottom:4px">${escHtml(q.quote_number)}</div>
+          <div style="font-size:13px; color:#555">${escHtml(q.customer_name)}${q.customer_org ? ' · ' + escHtml(q.customer_org) : ''}</div>
+          ${q.case_notes ? `<div style="font-size:12px; color:#888; margin-top:4px">📋 ${escHtml(q.case_notes)}</div>` : ''}
         </div>
         <div style="text-align:right">
-          <span class="status-badge status-${q.status}">${STATUS_LABELS[q.status] || q.status}</span>
+          <span class="status-badge status-${escHtml(q.status)}">${STATUS_LABELS[q.status] || escHtml(q.status)}</span>
           <div style="font-size:11px; color:#AAA; margin-top:4px">${formatDateShort(q.created_at)}</div>
         </div>
       </div>
-      ${isRejected && q.admin_notes ? `<div style="padding:0 16px 12px; font-size:12px; color:#DC3545">退回原因：${q.admin_notes}</div>` : ''}
+      ${isRejected && q.admin_notes ? `<div style="padding:0 16px 12px; font-size:12px; color:#DC3545">退回原因：${escHtml(q.admin_notes)}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -161,15 +166,15 @@ async function openQuote(id) {
   const total = detail.items.reduce((s, it) => s + it.unit_price_snapshot * it.quantity, 0);
   document.getElementById('quoteModalBody').innerHTML = `
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px; margin-bottom:16px">
-      <div><strong>客戶：</strong>${detail.customer_name}</div>
-      <div><strong>單位：</strong>${detail.customer_org || '—'}</div>
-      <div><strong>電話：</strong>${detail.customer_phone || '—'}</div>
-      <div><strong>Email：</strong>${detail.customer_email || '—'}</div>
-      <div><strong>狀態：</strong><span class="status-badge status-${detail.status}">${STATUS_LABELS[detail.status]||detail.status}</span></div>
+      <div><strong>客戶：</strong>${escHtml(detail.customer_name)}</div>
+      <div><strong>單位：</strong>${escHtml(detail.customer_org) || '—'}</div>
+      <div><strong>電話：</strong>${escHtml(detail.customer_phone) || '—'}</div>
+      <div><strong>Email：</strong>${escHtml(detail.customer_email) || '—'}</div>
+      <div><strong>狀態：</strong><span class="status-badge status-${escHtml(detail.status)}">${STATUS_LABELS[detail.status]||escHtml(detail.status)}</span></div>
       <div><strong>建立：</strong>${formatDateShort(detail.created_at)}</div>
     </div>
-    ${detail.case_notes ? `<div style="background:#F8F9FA;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px"><strong>案件說明：</strong>${detail.case_notes}</div>` : ''}
-    ${detail.admin_notes ? `<div style="background:${detail.status==='rejected'?'#FFF5F5':'#F8F9FA'};border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:${detail.status==='rejected'?'#DC3545':'inherit'}"><strong>${detail.status==='rejected'?'退回原因':'審核備註'}：</strong>${detail.admin_notes}</div>` : ''}
+    ${detail.case_notes ? `<div style="background:#F8F9FA;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px"><strong>案件說明：</strong>${escHtml(detail.case_notes)}</div>` : ''}
+    ${detail.admin_notes ? `<div style="background:${detail.status==='rejected'?'#FFF5F5':'#F8F9FA'};border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:${detail.status==='rejected'?'#DC3545':'inherit'}"><strong>${detail.status==='rejected'?'退回原因':'審核備註'}：</strong>${escHtml(detail.admin_notes)}</div>` : ''}
     <table class="data-table">
       <thead><tr><th>料號</th><th>品名</th><th>數量</th><th style="text-align:right">單價</th></tr></thead>
       <tbody>

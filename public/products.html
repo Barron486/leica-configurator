@@ -347,11 +347,20 @@
     } else {
       a.className = 'product-card coming-soon';
     }
-    a.innerHTML = `
-      ${shortDesc ? `<div style="font-size:11px;color:#666;margin-bottom:5px;line-height:1.4">${shortDesc}</div>` : ''}
-      <div class="product-name">${name}</div>
-      <span class="product-badge ${status === 'available' ? 'badge-available' : 'badge-coming'}">${status === 'available' ? '配置報價' : 'Coming Soon'}</span>
-    `;
+    if (shortDesc) {
+      const desc = document.createElement('div');
+      desc.style.cssText = 'font-size:11px;color:#666;margin-bottom:5px;line-height:1.4';
+      desc.textContent = shortDesc;
+      a.appendChild(desc);
+    }
+    const nameEl = document.createElement('div');
+    nameEl.className = 'product-name';
+    nameEl.textContent = name;
+    a.appendChild(nameEl);
+    const badge = document.createElement('span');
+    badge.className = 'product-badge ' + (status === 'available' ? 'badge-available' : 'badge-coming');
+    badge.textContent = status === 'available' ? '配置報價' : 'Coming Soon';
+    a.appendChild(badge);
     grid.appendChild(a);
   }
 </script>

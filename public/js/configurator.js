@@ -1,3 +1,9 @@
+// ── HTML escape ──────────────────────────────────────────────
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 // ── State ─────────────────────────────────────────────────────
 let user = null;
 let products = [];
@@ -446,7 +452,7 @@ function renderInvoice() {
   }
 
   const notesHtml = customNotes
-    ? `<div style="margin-top:10px; padding:10px 12px; background:#FFFBF0; border-left:3px solid #F0AD00; border-radius:0 4px 4px 0; font-size:11px; color:#333; white-space:pre-wrap; line-height:1.8">${customNotes}</div>`
+    ? `<div style="margin-top:10px; padding:10px 12px; background:#FFFBF0; border-left:3px solid #F0AD00; border-radius:0 4px 4px 0; font-size:11px; color:#333; white-space:pre-wrap; line-height:1.8">${escHtml(customNotes)}</div>`
     : '';
 
   document.getElementById('quotePreviewBody').innerHTML = `
@@ -499,10 +505,10 @@ function renderInvoice() {
         <!-- 客戶資訊 -->
         <div style="padding:18px 36px; border-right:1px solid #EAEAEA">
           <div style="font-size:10px; font-weight:700; color:#E3001B; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:8px">報 價 對 象</div>
-          <div style="font-size:15px; font-weight:700; color:#1A1A2E">${custName}</div>
-          ${custOrg   ? `<div style="font-size:12.5px; color:#444; margin-top:3px">${custOrg}</div>` : ''}
-          ${custPhone ? `<div style="font-size:11.5px; color:#666; margin-top:5px">📞&nbsp; ${custPhone}</div>` : ''}
-          ${custEmail ? `<div style="font-size:11.5px; color:#666; margin-top:2px">✉&nbsp; ${custEmail}</div>` : ''}
+          <div style="font-size:15px; font-weight:700; color:#1A1A2E">${escHtml(custName)}</div>
+          ${custOrg   ? `<div style="font-size:12.5px; color:#444; margin-top:3px">${escHtml(custOrg)}</div>` : ''}
+          ${custPhone ? `<div style="font-size:11.5px; color:#666; margin-top:5px">📞&nbsp; ${escHtml(custPhone)}</div>` : ''}
+          ${custEmail ? `<div style="font-size:11.5px; color:#666; margin-top:2px">✉&nbsp; ${escHtml(custEmail)}</div>` : ''}
         </div>
         <!-- 產品說明 -->
         <div style="padding:18px 36px; background:#FAFAFA">
