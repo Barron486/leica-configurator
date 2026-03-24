@@ -11,9 +11,10 @@ let selected     = new Map(); // id → quantity
 let customPrices = new Map(); // id → manually entered price
 let baseProduct  = null;
 let _lastQuoteNumber = '';
-let extraSelected = new Map(); // product_id → quantity (sales-added from DB)
-let customItems   = [];         // [{id, name, catalogNumber, cost, price, quantity}]
-let _nextCid      = 1;
+let extraSelected    = new Map(); // product_id → quantity (sales-added from DB)
+let customItems      = [];         // [{id, name, catalogNumber, cost, price, quantity}]
+let _nextCid         = 1;
+let requiredBomItems = new Set();  // product_id → 強制選配（不可刪除）
 
 // ── Price helpers ─────────────────────────────────────────────
 function getPriceKey() {
@@ -127,7 +128,10 @@ function _refreshInvoiceTotal() {
     const bomRes = await apiFetch(`/api/admin/boms/${bomId}/config`);
     if (bomRes && bomRes.ok) {
       const { bom, items } = await bomRes.json();
-      items.forEach(item => selected.set(item.product_id, item.quantity));
+      items.forEach(item => {
+        selected.set(item.product_id, item.quantity);
+        if (item.required !== 0) requiredBomItems.add(item.product_id);
+      });
       // 顯示 BOM 名稱於頁首
       const titleEl = document.querySelector('.main-topbar-title');
       if (titleEl && bom.name) titleEl.textContent = bom.name;
@@ -166,11 +170,15 @@ function renderProducts() {
     html += `<div class="category-section"><div class="category-title">${CATEGORY_LABELS[cat]||cat}</div>`;
     for (const p of items) {
       const isIncluded = p.is_included_in_base;
+      const isRequired = requiredBomItems.has(p.id);
       const qty = selected.get(p.id) || 1;
+      const checkboxHtml = isRequired
+        ? `<input type="checkbox" checked disabled title="強制選配，無法移除">`
+        : `<input type="checkbox" checked onclick="event.stopPropagation(); removeBomItem(${p.id})" title="取消勾選可移除">`;
       html += `<div class="product-item selected">
-        <input type="checkbox" checked disabled>
+        ${checkboxHtml}
         <div class="product-info">
-          <div class="product-name">${p.name_zh}${isIncluded ? ' <span style="color:#28A745;font-size:11px">✓ 含於配置</span>' : ''}</div>
+          <div class="product-name">${p.name_zh}${isIncluded ? ' <span style="color:#28A745;font-size:11px">✓ 含於配置</span>' : ''}${isRequired ? '' : ' <span style="color:#888;font-size:10px">（可選）</span>'}</div>
           <div class="product-code">${p.catalog_number}</div>
           ${p.description ? `<div class="product-desc">${p.description}</div>` : ''}
           ${p.notes ? `<div class="product-note">⚠ ${p.notes}</div>` : ''}
@@ -302,6 +310,14 @@ function renderPriceColumn(p) {
       ? `<div class="price-retail" style="font-size:14px">${fmt(p.retail_price)}</div>`
       : '';
   }
+}
+
+// ── 移除非強制 BOM 品項 ────────────────────────────────────────
+function removeBomItem(id) {
+  if (requiredBomItems.has(id)) return; // 強制選配不可移除
+  selected.delete(id);
+  renderProducts();
+  renderSummary();
 }
 
 // ── Extra product (from DB) ───────────────────────────────────

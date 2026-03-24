@@ -112,6 +112,7 @@ function initSchema() {
       product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       quantity INTEGER DEFAULT 1,
       notes TEXT,
+      required INTEGER DEFAULT 1,
       UNIQUE(bom_id, product_id)
     );
 
@@ -453,6 +454,15 @@ function _migrate(db) {
         console.log('Migration 15: quote_items supports custom items');
       }
     } catch(e) { console.error('Migration 15 error:', e.message); }
+
+    // 17. bom_items: 加入 required 欄位（強制選配）
+    try {
+      const biCols = db.prepare("PRAGMA table_info(bom_items)").all().map(c => c.name);
+      if (!biCols.includes('required')) {
+        db.exec("ALTER TABLE bom_items ADD COLUMN required INTEGER DEFAULT 1");
+        console.log('Migration 17: added bom_items.required');
+      }
+    } catch(e) { console.error('Migration 17 error:', e.message); }
 
     // 16. api_settings: seed 初始 key（舊 DB 需補建表）
     try {

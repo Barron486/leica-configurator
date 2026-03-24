@@ -579,6 +579,10 @@
           <label style="font-size:12px; color:#555; margin-bottom:4px; display:block">備註</label>
           <input type="text" id="bom_add_notes" placeholder="可選" style="width:100%; padding:8px; border:1px solid #DDD; border-radius:4px; font-size:13px">
         </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <label style="font-size:12px; color:#555">強制選配</label>
+          <input type="checkbox" id="bom_add_required" checked style="width:18px;height:18px;cursor:pointer">
+        </div>
         <button class="btn btn-primary btn-sm" onclick="addBomItem()" style="white-space:nowrap">+ 加入</button>
       </div>
 
@@ -594,6 +598,7 @@
               <th>建議報價</th>
               <th>小計（建議）</th>
               <th>備註</th>
+              <th style="text-align:center">強制選配</th>
               <th>操作</th>
             </tr>
           </thead>

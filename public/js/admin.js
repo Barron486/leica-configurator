@@ -834,7 +834,7 @@ async function renderBomItems() {
 
   const tbody = document.getElementById('bomItemsBody');
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-muted">尚無品項，請從上方選擇產品加入</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-muted">尚無品項，請從上方選擇產品加入</td></tr>';
     document.getElementById('bomItemsFoot').innerHTML = '';
     return;
   }
@@ -852,6 +852,12 @@ async function renderBomItems() {
       <td class="price-suggest text-right">${it.suggested_price > 0 ? formatPrice(it.suggested_price) : '—'}</td>
       <td class="price-suggest text-right">${it.suggested_price > 0 ? formatPrice(it.suggested_price * it.quantity) : '—'}</td>
       <td class="text-small text-muted">${it.notes || '—'}</td>
+      <td style="text-align:center">
+        <input type="checkbox" ${it.required ? 'checked' : ''}
+          title="${it.required ? '強制選配（業務不可刪除）' : '非強制（業務可自行移除）'}"
+          onchange="updateBomItemRequired(${it.id}, this.checked)"
+          style="width:16px;height:16px;cursor:pointer">
+      </td>
       <td>
         <button class="btn btn-outline btn-sm" style="color:#DC3545; border-color:#DC3545"
           onclick="removeBomItem(${it.id})">移除</button>
@@ -867,7 +873,7 @@ async function renderBomItems() {
       <td class="price-cost text-right">${totalCost > 0 ? formatPrice(totalCost) : '—'}</td>
       <td class="price-suggest text-right"></td>
       <td class="price-suggest text-right">${totalSuggested > 0 ? formatPrice(totalSuggested) : '—'}</td>
-      <td colspan="2"></td>
+      <td colspan="3"></td>
     </tr>
   `;
 }
@@ -878,9 +884,10 @@ async function addBomItem() {
   const notes     = document.getElementById('bom_add_notes').value.trim();
   if (!productId) { showToast('請選擇產品', 'error'); return; }
 
+  const required = document.getElementById('bom_add_required')?.checked ? 1 : 0;
   const res = await apiFetch(`/api/admin/boms/${_currentBomId}/items`, {
     method: 'POST',
-    body: JSON.stringify({ product_id: productId, quantity, notes }),
+    body: JSON.stringify({ product_id: productId, quantity, notes, required }),
   });
   if (!res || !res.ok) {
     const err = await res?.json();
@@ -900,6 +907,14 @@ async function updateBomItemQty(itemId, qty, notes) {
     body: JSON.stringify({ quantity: parseInt(qty)||1, notes }),
   });
   await renderBomItems();
+}
+
+async function updateBomItemRequired(itemId, required) {
+  await apiFetch(`/api/admin/boms/${_currentBomId}/items/${itemId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ required: required ? 1 : 0 }),
+  });
+  // 不需要重新渲染，checkbox 狀態已由使用者自行切換
 }
 
 async function removeBomItem(itemId) {

@@ -46,7 +46,7 @@ router.get('/:id/config', notReadOnly, (req, res) => {
   const db = getDb();
   const bom = db.prepare('SELECT id, name, short_description FROM boms WHERE id=? AND active=1').get(req.params.id);
   if (!bom) { db.close(); return res.status(404).json({ error: 'BOM 不存在' }); }
-  const items = db.prepare('SELECT product_id, quantity FROM bom_items WHERE bom_id=?').all(req.params.id);
+  const items = db.prepare('SELECT product_id, quantity, required FROM bom_items WHERE bom_id=?').all(req.params.id);
   db.close();
   res.json({ bom, items });
 });
@@ -125,7 +125,8 @@ router.get('/:id/items', adminOnly, (req, res) => {
   const items = db.prepare(`
     SELECT bi.id, bi.quantity, bi.notes,
       p.id AS product_id, p.catalog_number, p.name_zh, p.name_en, p.category,
-      pr.cost_price, pr.min_sell_price, pr.suggested_price, pr.retail_price
+      pr.cost_price, pr.min_sell_price, pr.suggested_price, pr.retail_price,
+      bi.required
     FROM bom_items bi
     JOIN products p ON p.id = bi.product_id
     LEFT JOIN pricing pr ON pr.product_id = bi.product_id
@@ -139,13 +140,13 @@ router.get('/:id/items', adminOnly, (req, res) => {
 
 // ── POST /api/admin/boms/:id/items ───────────────────────────
 router.post('/:id/items', permBom, (req, res) => {
-  const { product_id, quantity, notes } = req.body;
+  const { product_id, quantity, notes, required } = req.body;
   if (!product_id) return res.status(400).json({ error: '產品為必填' });
   const db = getDb();
   try {
     const result = db.prepare(
-      'INSERT INTO bom_items (bom_id, product_id, quantity, notes) VALUES (?,?,?,?)'
-    ).run(req.params.id, product_id, quantity || 1, notes || '');
+      'INSERT INTO bom_items (bom_id, product_id, quantity, notes, required) VALUES (?,?,?,?,?)'
+    ).run(req.params.id, product_id, quantity || 1, notes || '', required ?? 1);
     db.close();
     res.status(201).json({ id: result.lastInsertRowid });
   } catch (e) {
@@ -157,11 +158,18 @@ router.post('/:id/items', permBom, (req, res) => {
 
 // ── PUT /api/admin/boms/:id/items/:itemId ────────────────────
 router.put('/:id/items/:itemId', permBom, (req, res) => {
-  const { quantity, notes } = req.body;
+  const { quantity, notes, required } = req.body;
   const db = getDb();
+  const existing = db.prepare('SELECT * FROM bom_items WHERE id=? AND bom_id=?').get(req.params.itemId, req.params.id);
+  if (!existing) { db.close(); return res.status(404).json({ error: '品項不存在' }); }
   db.prepare(
-    'UPDATE bom_items SET quantity=?, notes=? WHERE id=? AND bom_id=?'
-  ).run(quantity || 1, notes || '', req.params.itemId, req.params.id);
+    'UPDATE bom_items SET quantity=?, notes=?, required=? WHERE id=? AND bom_id=?'
+  ).run(
+    quantity  ?? existing.quantity,
+    notes     ?? existing.notes ?? '',
+    required  !== undefined ? (required ? 1 : 0) : existing.required,
+    req.params.itemId, req.params.id
+  );
   db.close();
   res.json({ message: '已更新' });
 });
