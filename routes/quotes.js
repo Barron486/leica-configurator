@@ -137,7 +137,7 @@ router.get('/:id', (req, res) => {
 
   const items = db.prepare(`
     SELECT qi.*, pr.catalog_number, pr.name_zh, pr.name_en, pr.category
-    FROM quote_items qi JOIN products pr ON pr.id = qi.product_id
+    FROM quote_items qi LEFT JOIN products pr ON pr.id = qi.product_id
     WHERE qi.quote_id = ?
   `).all(req.params.id);
 
@@ -169,8 +169,8 @@ router.post('/', (req, res) => {
   `);
 
   const insertItem = db.prepare(`
-    INSERT INTO quote_items (quote_id, product_id, quantity, unit_price_snapshot, price_type)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO quote_items (quote_id, product_id, custom_item_name, custom_catalog_number, quantity, unit_price_snapshot, price_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = insertQuote.run(quoteNumber, customer_name, customer_org || '', customer_email || '', customer_phone || '', userId);
@@ -180,9 +180,14 @@ router.post('/', (req, res) => {
   const priceType = role === 'admin' ? 'suggested' : role === 'sales' ? 'suggested' : 'retail';
 
   for (const item of items) {
-    const pricing = db.prepare('SELECT * FROM pricing WHERE product_id = ?').get(item.product_id);
-    const price = pricing ? (priceType === 'suggested' ? pricing.suggested_price : pricing.retail_price) : 0;
-    insertItem.run(quoteId, item.product_id, item.quantity || 1, price, priceType);
+    if (item.product_id) {
+      const pricing = db.prepare('SELECT * FROM pricing WHERE product_id = ?').get(item.product_id);
+      const price = pricing ? (priceType === 'suggested' ? pricing.suggested_price : pricing.retail_price) : 0;
+      insertItem.run(quoteId, item.product_id, '', '', item.quantity || 1, price, priceType);
+    } else if (item.custom_name) {
+      const unitPrice = parseFloat(item.unit_price) || 0;
+      insertItem.run(quoteId, null, item.custom_name, item.custom_catalog_number || '', item.quantity || 1, unitPrice, 'custom');
+    }
   }
 
   db.close();

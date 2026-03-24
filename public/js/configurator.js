@@ -11,6 +11,9 @@ let selected     = new Map(); // id → quantity
 let customPrices = new Map(); // id → manually entered price
 let baseProduct  = null;
 let _lastQuoteNumber = '';
+let extraSelected = new Map(); // product_id → quantity (sales-added from DB)
+let customItems   = [];         // [{id, name, catalogNumber, cost, price, quantity}]
+let _nextCid      = 1;
 
 // ── Price helpers ─────────────────────────────────────────────
 function getPriceKey() {
@@ -49,9 +52,17 @@ function updateInvoicePrice(id, qty, inputEl) {
 }
 
 function _refreshInvoiceTotal() {
-  const items = products.filter(p => selected.has(p.id));
-  const total   = items.reduce((s, p) => s + getEffectivePrice(p) * (selected.get(p.id) || 1), 0);
-  const allFree = items.every(p => getEffectivePrice(p) === 0);
+  const allDbItems = [
+    ...products.filter(p => selected.has(p.id)),
+    ...products.filter(p => extraSelected.has(p.id)),
+  ];
+  const dbTotal     = allDbItems.reduce((s, p) => {
+    const qty = selected.has(p.id) ? selected.get(p.id) : extraSelected.get(p.id);
+    return s + getEffectivePrice(p) * (qty || 1);
+  }, 0);
+  const customTotal = customItems.reduce((s, ci) => s + ci.price * ci.quantity, 0);
+  const total   = dbTotal + customTotal;
+  const allFree = total === 0;
   const el = document.getElementById('invoice-total-amount');
   if (el) el.textContent = allFree ? '請洽業務' : formatPrice(total);
 }
@@ -128,62 +139,145 @@ function _refreshInvoiceTotal() {
 })();
 
 // ── Render product list ───────────────────────────────────────
-// 只顯示 BOM 中已選的品項（不允許自由新增/移除）
+// BOM 品項（固定）+ 額外產品（可移除）+ 自訂品項（可移除）+ 新增面板
 function renderProducts() {
   const container = document.getElementById('productList');
 
-  // 只取出已在 BOM 中的產品
-  const bomItems = products.filter(p => selected.has(p.id));
+  const bomItems   = products.filter(p => selected.has(p.id));
+  const extraItems = products.filter(p => extraSelected.has(p.id));
+
   if (bomItems.length === 0) {
-    container.innerHTML = '<div style="text-align:center;padding:40px;color:#888">BOM 無品項</div>';
+    container.innerHTML = `
+      <div style="text-align:center;padding:40px;color:#888">BOM 無品項</div>
+      ${renderAddPanel()}`;
     return;
   }
 
-  const grouped = {};
-  bomItems.forEach(p => {
-    if (!grouped[p.category]) grouped[p.category] = [];
-    grouped[p.category].push(p);
-  });
-
   const categoryOrder = ['base','orientation','clamping','holder','blade_base','blade_holder','blade','cooling','lighting','accessory'];
-
   let html = '';
+
+  // ── Section 1: BOM items (fixed) ─────────────────────────────
+  // group by category
+  const bomGrouped = {};
+  bomItems.forEach(p => { if (!bomGrouped[p.category]) bomGrouped[p.category] = []; bomGrouped[p.category].push(p); });
   for (const cat of categoryOrder) {
-    const items = grouped[cat];
-    if (!items) continue;
-    items.sort((a, b) => a.sort_order - b.sort_order);
-
-    html += `<div class="category-section">
-      <div class="category-title">${CATEGORY_LABELS[cat] || cat}</div>`;
-
+    const items = bomGrouped[cat]; if (!items) continue;
+    items.sort((a,b) => a.sort_order - b.sort_order);
+    html += `<div class="category-section"><div class="category-title">${CATEGORY_LABELS[cat]||cat}</div>`;
     for (const p of items) {
-      const isIncluded = p.is_included_in_base && !p.is_base_unit;
+      const isIncluded = p.is_included_in_base;
       const qty = selected.get(p.id) || 1;
-
-      // BOM 品項固定選中，不可取消勾選
-      html += `<div class="product-item selected">`;
-      html += `<input type="checkbox" checked disabled>`;
-      html += `<div class="product-info">`;
-      html += `<div class="product-name">${p.name_zh}${isIncluded ? ' <span style="color:#28A745;font-size:11px">✓ 含於配置</span>' : ''}</div>`;
-      html += `<div class="product-code">${p.catalog_number}</div>`;
-      if (p.description) html += `<div class="product-desc">${p.description}</div>`;
-      if (p.notes) html += `<div class="product-note">⚠ ${p.notes}</div>`;
-      html += `</div>`;
-
-      // Price + qty stepper
-      html += `<div class="product-price">`;
-      html += renderPriceColumn(p);
-      html += `<div class="qty-stepper" onclick="event.stopPropagation()">
-        <button class="qty-btn" onclick="changeQty(${p.id}, -1)">−</button>
-        <span class="qty-val">${qty}</span>
-        <button class="qty-btn" onclick="changeQty(${p.id}, 1)">+</button>
+      html += `<div class="product-item selected">
+        <input type="checkbox" checked disabled>
+        <div class="product-info">
+          <div class="product-name">${p.name_zh}${isIncluded ? ' <span style="color:#28A745;font-size:11px">✓ 含於配置</span>' : ''}</div>
+          <div class="product-code">${p.catalog_number}</div>
+          ${p.description ? `<div class="product-desc">${p.description}</div>` : ''}
+          ${p.notes ? `<div class="product-note">⚠ ${p.notes}</div>` : ''}
+        </div>
+        <div class="product-price">
+          ${renderPriceColumn(p)}
+          <div class="qty-stepper" onclick="event.stopPropagation()">
+            <button class="qty-btn" onclick="changeQty(${p.id}, -1)">−</button>
+            <span class="qty-val">${qty}</span>
+            <button class="qty-btn" onclick="changeQty(${p.id}, 1)">+</button>
+          </div>
+        </div>
       </div>`;
-      html += `</div></div>`;
     }
     html += `</div>`;
   }
 
+  // ── Section 2: Extra items from DB (removable) ────────────────
+  if (extraItems.length > 0) {
+    html += `<div class="category-section"><div class="category-title" style="display:flex;justify-content:space-between;align-items:center"><span>額外新增品項</span><span style="font-size:10px;font-weight:400;color:#AAA">取消勾選可移除</span></div>`;
+    for (const p of extraItems) {
+      const qty = extraSelected.get(p.id) || 1;
+      html += `<div class="product-item selected">
+        <input type="checkbox" checked onclick="event.stopPropagation(); removeExtraProduct(${p.id})">
+        <div class="product-info">
+          <div class="product-name">${p.name_zh}</div>
+          <div class="product-code">${p.catalog_number}</div>
+          ${p.description ? `<div class="product-desc">${p.description}</div>` : ''}
+        </div>
+        <div class="product-price">
+          ${renderPriceColumn(p)}
+          <div class="qty-stepper" onclick="event.stopPropagation()">
+            <button class="qty-btn" onclick="changeExtraQty(${p.id}, -1)">−</button>
+            <span class="qty-val">${qty}</span>
+            <button class="qty-btn" onclick="changeExtraQty(${p.id}, 1)">+</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // ── Section 3: Custom items (removable) ───────────────────────
+  if (customItems.length > 0) {
+    html += `<div class="category-section"><div class="category-title" style="display:flex;justify-content:space-between;align-items:center"><span>自訂品項</span><span style="font-size:10px;font-weight:400;color:#AAA">取消勾選可移除</span></div>`;
+    for (const ci of customItems) {
+      html += `<div class="product-item selected">
+        <input type="checkbox" checked onclick="event.stopPropagation(); removeCustomItem(${ci.id})">
+        <div class="product-info">
+          <div class="product-name">${ci.name}</div>
+          <div class="product-code">${ci.catalogNumber || '—'}</div>
+        </div>
+        <div class="product-price">
+          ${user.role !== 'customer' && user.role !== 'demo' && ci.cost > 0 ? `<div class="price-cost">成本 ${formatPrice(ci.cost)}</div>` : ''}
+          <div class="price-suggest">${ci.price > 0 ? formatPrice(ci.price) : '洽詢'}</div>
+          <div class="qty-stepper" onclick="event.stopPropagation()">
+            <button class="qty-btn" onclick="changeCustomQty(${ci.id}, -1)">−</button>
+            <span class="qty-val">${ci.quantity}</span>
+            <button class="qty-btn" onclick="changeCustomQty(${ci.id}, 1)">+</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // ── Section 4: Add panel ──────────────────────────────────────
+  html += renderAddPanel();
+
   container.innerHTML = html;
+}
+
+function renderAddPanel() {
+  const canSeeCost = user.role !== 'customer' && user.role !== 'demo';
+  const availableProducts = products.filter(p => !selected.has(p.id) && !extraSelected.has(p.id));
+  const options = availableProducts.map(p =>
+    `<option value="${p.id}">[${p.catalog_number}] ${p.name_zh}</option>`
+  ).join('');
+  const inp = 'padding:7px 8px; border:1px solid #DDD; border-radius:4px; font-size:13px';
+  return `
+    <div style="margin-top:20px; border-top:2px dashed #E5E5EA; padding-top:16px">
+      <div style="font-size:12px;font-weight:700;color:#444;margin-bottom:14px">＋ 新增品項</div>
+
+      <div style="margin-bottom:16px">
+        <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:600">從產品資料庫選取</div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <select id="extraProductSelect" style="flex:1;min-width:180px;${inp}">
+            <option value="">— 選擇產品 —</option>
+            ${options}
+          </select>
+          <input type="number" id="extraProductQty" value="1" min="1" max="99" style="width:64px;${inp};text-align:center">
+          <button class="btn btn-outline btn-sm" onclick="addExtraProduct()" style="white-space:nowrap">+ 加入</button>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:600">手動新增自訂品項</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px">
+          <input id="customItemName" placeholder="品名 *" style="${inp};grid-column:1/-1">
+          <input id="customItemCatalog" placeholder="料號（選填）" style="${inp}">
+          <input id="customItemQty" type="number" value="1" min="1" max="99" placeholder="數量" style="${inp}">
+          ${canSeeCost ? `<input id="customItemCost" type="number" min="0" step="1" placeholder="成本 *" style="${inp}">` : '<div></div>'}
+          <input id="customItemPrice" type="number" min="0" step="1" placeholder="報價單價 *" style="${inp}">
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="addCustomItem()">+ 新增自訂品項</button>
+      </div>
+    </div>`;
 }
 
 function renderPriceColumn(p) {
@@ -210,15 +304,87 @@ function renderPriceColumn(p) {
   }
 }
 
-// ── Toggle selection ─────────────────────────────────────────
-function toggleProduct(id) {
-  const p = products.find(x => x.id === id);
-  if (!p || p.is_base_unit) return;
+// ── Extra product (from DB) ───────────────────────────────────
+function addExtraProduct() {
+  const sel = document.getElementById('extraProductSelect');
+  const id  = parseInt(sel.value);
+  if (!id) { showToast('請選擇產品', 'error'); return; }
+  const qty = parseInt(document.getElementById('extraProductQty').value) || 1;
+  extraSelected.set(id, qty);
+  renderProducts();
+  renderSummary();
+}
 
-  if (selected.has(id)) {
-    selected.delete(id);
-  } else {
-    selected.set(id, 1);
+function removeExtraProduct(id) {
+  extraSelected.delete(id);
+  renderProducts();
+  renderSummary();
+}
+
+function changeExtraQty(id, delta) {
+  if (!extraSelected.has(id)) return;
+  const newQty = (extraSelected.get(id) || 1) + delta;
+  if (newQty < 1) {
+    extraSelected.delete(id);
+  } else if (newQty <= 99) {
+    extraSelected.set(id, newQty);
+  }
+  renderProducts();
+  renderSummary();
+}
+
+// ── Custom items ──────────────────────────────────────────────
+function addCustomItem() {
+  const nameEl  = document.getElementById('customItemName');
+  const catEl   = document.getElementById('customItemCatalog');
+  const priceEl = document.getElementById('customItemPrice');
+  const costEl  = document.getElementById('customItemCost');
+  const qtyEl   = document.getElementById('customItemQty');
+
+  const name  = nameEl?.value.trim();
+  const price = parseFloat(priceEl?.value);
+  if (!name)              { showToast('請填寫品名', 'error'); return; }
+  if (isNaN(price) || price < 0) { showToast('請填寫報價單價', 'error'); return; }
+
+  const canSeeCost = user.role !== 'customer' && user.role !== 'demo';
+  if (canSeeCost) {
+    const cost = parseFloat(costEl?.value);
+    if (isNaN(cost) || cost < 0) { showToast('請填寫成本', 'error'); return; }
+  }
+
+  customItems.push({
+    id:           _nextCid++,
+    name,
+    catalogNumber: catEl?.value.trim() || '',
+    cost:          parseFloat(costEl?.value) || 0,
+    price,
+    quantity:      parseInt(qtyEl?.value) || 1,
+  });
+
+  if (nameEl)  nameEl.value  = '';
+  if (catEl)   catEl.value   = '';
+  if (priceEl) priceEl.value = '';
+  if (costEl)  costEl.value  = '';
+  if (qtyEl)   qtyEl.value   = '1';
+
+  renderProducts();
+  renderSummary();
+}
+
+function removeCustomItem(id) {
+  customItems = customItems.filter(ci => ci.id !== id);
+  renderProducts();
+  renderSummary();
+}
+
+function changeCustomQty(id, delta) {
+  const ci = customItems.find(x => x.id === id);
+  if (!ci) return;
+  const newQty = ci.quantity + delta;
+  if (newQty < 1) {
+    customItems = customItems.filter(x => x.id !== id);
+  } else if (newQty <= 99) {
+    ci.quantity = newQty;
   }
   renderProducts();
   renderSummary();
@@ -242,13 +408,17 @@ function changeQty(id, delta) {
 
 // ── Render summary ────────────────────────────────────────────
 function renderSummary() {
-  const items = products.filter(p => selected.has(p.id));
-  const tbody = document.getElementById('summaryItems');
+  const bomDbItems   = products.filter(p => selected.has(p.id));
+  const extraDbItems = products.filter(p => extraSelected.has(p.id));
+  const allDbItems   = [...bomDbItems, ...extraDbItems];
+  const hasItems     = allDbItems.length > 0 || customItems.length > 0;
+
+  const tbody      = document.getElementById('summaryItems');
   const priceBlock = document.getElementById('priceBlock');
   const btnSubmit  = document.getElementById('btnSubmit');
   const btnPreview = document.getElementById('btnPreview');
 
-  if (items.length === 0) {
+  if (!hasItems) {
     tbody.innerHTML = '<tr><td colspan="2" class="text-muted">尚未選擇產品</td></tr>';
     priceBlock.style.display = 'none';
     if (btnSubmit)  btnSubmit.disabled  = true;
@@ -256,27 +426,35 @@ function renderSummary() {
     return;
   }
 
-  let total = 0;
-  let totalMin = 0, totalCost = 0, totalRetail = 0;
+  let total = 0, totalMin = 0, totalCost = 0, totalRetail = 0;
   let rows = '';
 
-  for (const p of items) {
-    const qty      = selected.get(p.id) || 1;
-    const effPrice = getEffectivePrice(p);
+  for (const p of allDbItems) {
+    const qty       = selected.has(p.id) ? selected.get(p.id) : extraSelected.get(p.id);
+    const effPrice  = getEffectivePrice(p);
     const lineTotal = effPrice * qty;
     total       += lineTotal;
     totalMin    += (p.min_sell_price || 0) * qty;
     totalCost   += (p.cost_price     || 0) * qty;
     totalRetail += (p.retail_price   || 0) * qty;
 
-    const priceDisplay = lineTotal > 0
-      ? formatPrice(lineTotal, p.currency)
-      : customPrices.has(p.id) ? '' : '';  // 無資料時留空
-
     rows += `<tr>
       <td>${p.name_zh}${qty > 1 ? ` <span style="color:#1565C0;font-size:11px">×${qty}</span>` : ''}<br>
           <span class="text-muted" style="font-size:11px">${p.catalog_number}</span></td>
-      <td>${priceDisplay}</td>
+      <td>${lineTotal > 0 ? formatPrice(lineTotal, p.currency) : ''}</td>
+    </tr>`;
+  }
+
+  for (const ci of customItems) {
+    const lineTotal = ci.price * ci.quantity;
+    total       += lineTotal;
+    totalCost   += ci.cost  * ci.quantity;
+    totalRetail += ci.price * ci.quantity;
+
+    rows += `<tr>
+      <td>${ci.name}${ci.quantity > 1 ? ` <span style="color:#1565C0;font-size:11px">×${ci.quantity}</span>` : ''}<br>
+          <span class="text-muted" style="font-size:11px">${ci.catalogNumber || '自訂'}</span></td>
+      <td>${lineTotal > 0 ? formatPrice(lineTotal) : ''}</td>
     </tr>`;
   }
 
@@ -287,7 +465,7 @@ function renderSummary() {
 
   tbody.innerHTML = rows;
 
-  // Price summary block
+  const allFree = total === 0;
   let priceRowsHtml = '';
   if (user.role === 'customer') {
     priceRowsHtml = `
@@ -306,7 +484,6 @@ function renderSummary() {
         <span>最低售價</span><span>${formatPrice(totalMin)}</span>
       </div>`;
   } else {
-    // admin
     priceRowsHtml = `
       <div class="price-block-row">
         <span>零售價</span><span>${formatPrice(totalRetail)}</span>
@@ -370,7 +547,9 @@ const INVOICE_CATEGORY_LABELS = {
 };
 
 function renderInvoice() {
-  const items = products.filter(p => selected.has(p.id));
+  const bomDbItems   = products.filter(p => selected.has(p.id));
+  const extraDbItems = products.filter(p => extraSelected.has(p.id));
+  const items = [...bomDbItems, ...extraDbItems]; // DB items (BOM + extra)
   const priceKey = user.role === 'customer' ? 'retail_price' : 'suggested_price';
 
   const custName  = document.getElementById('cust_name')?.value.trim()  || '（請填寫）';
@@ -385,8 +564,13 @@ function renderInvoice() {
   const expDate = new Date(now.getTime() + validDays * 86400000)
     .toLocaleDateString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit' });
 
-  const total   = items.reduce((s, p) => s + getEffectivePrice(p) * (selected.get(p.id) || 1), 0);
-  const allFree = items.every(p => getEffectivePrice(p) === 0);
+  const dbTotal     = items.reduce((s, p) => {
+    const qty = selected.has(p.id) ? selected.get(p.id) : extraSelected.get(p.id);
+    return s + getEffectivePrice(p) * (qty || 1);
+  }, 0);
+  const customTotal = customItems.reduce((s, ci) => s + ci.price * ci.quantity, 0);
+  const total   = dbTotal + customTotal;
+  const allFree = total === 0;
 
   // ── 依類別分組並建立表格列 ─────────────────────────────────
   const categoryOrder = ['base','orientation','clamping','holder','blade_base','blade_holder','blade','cooling','lighting','accessory'];
@@ -395,6 +579,7 @@ function renderInvoice() {
     if (!grouped[p.category]) grouped[p.category] = [];
     grouped[p.category].push(p);
   });
+  // Note: customItems rendered separately after DB items loop
 
   let rowNum = 0;
   let tableRows = '';
@@ -412,7 +597,7 @@ function renderInvoice() {
       </tr>`;
     catItems.forEach(p => {
       rowNum++;
-      const qty       = selected.get(p.id) || 1;
+      const qty       = selected.has(p.id) ? selected.get(p.id) : (extraSelected.get(p.id) || 1);
       const unitPrice = getEffectivePrice(p);
       const subtotal  = unitPrice * qty;
       const bg = rowNum % 2 === 0 ? '#FAFAFA' : '#FFFFFF';
@@ -443,6 +628,35 @@ function renderInvoice() {
           </td>
           <td style="padding:9px 10px; text-align:center; color:#1A1A2E; font-size:12.5px; font-weight:600">${qty}</td>
           <td id="invoice-sub-${p.id}" style="padding:9px 10px; text-align:right; color:#1A1A2E; font-size:12.5px; font-weight:700; white-space:nowrap">
+            ${subtotal > 0 ? formatPrice(subtotal) : ''}
+          </td>
+        </tr>`;
+    });
+  }
+
+  // ── 自訂品項 ────────────────────────────────────────────────
+  if (customItems.length > 0) {
+    tableRows += `
+      <tr>
+        <td colspan="5" style="
+          padding: 7px 10px 5px;
+          font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+          color: #E3001B; background: #FFF5F5; border-top: 1px solid #FADAD9;
+        ">自訂品項</td>
+      </tr>`;
+    customItems.forEach(ci => {
+      rowNum++;
+      const subtotal = ci.price * ci.quantity;
+      const bg = rowNum % 2 === 0 ? '#FAFAFA' : '#FFFFFF';
+      tableRows += `
+        <tr style="background:${bg}">
+          <td style="padding:9px 10px; color:#222; font-size:12.5px; line-height:1.4">${escHtml(ci.name)}</td>
+          <td style="padding:9px 10px; color:#888; font-size:11px; font-family:monospace; white-space:nowrap">${escHtml(ci.catalogNumber||'')}</td>
+          <td style="padding:9px 10px; text-align:right; color:#555; font-size:12px; white-space:nowrap">
+            ${ci.price > 0 ? formatPrice(ci.price) : ''}
+          </td>
+          <td style="padding:9px 10px; text-align:center; color:#1A1A2E; font-size:12.5px; font-weight:600">${ci.quantity}</td>
+          <td style="padding:9px 10px; text-align:right; color:#1A1A2E; font-size:12.5px; font-weight:700; white-space:nowrap">
             ${subtotal > 0 ? formatPrice(subtotal) : ''}
           </td>
         </tr>`;
@@ -515,7 +729,7 @@ function renderInvoice() {
           <div style="font-size:12px; color:#666; margin-top:3px">輪轉式切片機配置方案</div>
           <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap">
             <span style="background:#E8F0FE; color:#1565C0; font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px">
-              共 ${items.length} 項配件
+              共 ${items.length + customItems.length} 項配件
             </span>
             ${!allFree ? `<span style="background:#D4EDDA; color:#155724; font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px">
               合計 ${formatPrice(total)}
@@ -673,7 +887,18 @@ async function submitQuote() {
   const customer_name = document.getElementById('cust_name').value.trim();
   if (!customer_name) { showToast('請先填寫客戶姓名', 'error'); return; }
 
-  const items = [...selected.entries()].map(([id, qty]) => ({ product_id: id, quantity: qty }));
+  const productItems = [
+    ...[...selected.entries()].map(([id, qty]) => ({ product_id: id, quantity: qty })),
+    ...[...extraSelected.entries()].map(([id, qty]) => ({ product_id: id, quantity: qty })),
+  ];
+  const customItemsPayload = customItems.map(ci => ({
+    custom_name:           ci.name,
+    custom_catalog_number: ci.catalogNumber,
+    custom_cost:           ci.cost,
+    unit_price:            ci.price,
+    quantity:              ci.quantity,
+  }));
+  const allItems = [...productItems, ...customItemsPayload];
 
   const res = await apiFetch('/api/quotes', {
     method: 'POST',
@@ -682,7 +907,7 @@ async function submitQuote() {
       customer_org:   document.getElementById('cust_org').value,
       customer_email: document.getElementById('cust_email').value,
       customer_phone: document.getElementById('cust_phone').value,
-      items,
+      items: allItems,
     }),
   });
 

@@ -75,7 +75,9 @@ function initSchema() {
     CREATE TABLE IF NOT EXISTS quote_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       quote_id INTEGER NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
-      product_id INTEGER NOT NULL REFERENCES products(id),
+      product_id INTEGER REFERENCES products(id),
+      custom_item_name TEXT DEFAULT '',
+      custom_catalog_number TEXT DEFAULT '',
       quantity INTEGER DEFAULT 1,
       unit_price_snapshot REAL DEFAULT 0,
       price_type TEXT DEFAULT 'retail'
@@ -419,6 +421,30 @@ function _migrate(db) {
       doMigrate();
       console.log('Migration 14: catalog_items → BOMs');
     } catch(e) { console.error('Migration 14 error:', e.message); }
+
+    // 15. quote_items: make product_id nullable, add custom_item_name + custom_catalog_number
+    try {
+      const qiCols = db.prepare("PRAGMA table_info(quote_items)").all().map(c => c.name);
+      if (!qiCols.includes('custom_item_name')) {
+        db.exec(`
+          CREATE TABLE quote_items_v2 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            quote_id INTEGER NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+            product_id INTEGER REFERENCES products(id),
+            custom_item_name TEXT DEFAULT '',
+            custom_catalog_number TEXT DEFAULT '',
+            quantity INTEGER DEFAULT 1,
+            unit_price_snapshot REAL DEFAULT 0,
+            price_type TEXT DEFAULT 'retail'
+          );
+          INSERT INTO quote_items_v2 (id, quote_id, product_id, quantity, unit_price_snapshot, price_type)
+            SELECT id, quote_id, product_id, quantity, unit_price_snapshot, price_type FROM quote_items;
+          DROP TABLE quote_items;
+          ALTER TABLE quote_items_v2 RENAME TO quote_items;
+        `);
+        console.log('Migration 15: quote_items supports custom items');
+      }
+    } catch(e) { console.error('Migration 15 error:', e.message); }
 
   } finally {
     db.exec('PRAGMA foreign_keys = ON');

@@ -180,8 +180,8 @@ async function openQuote(id) {
       <tbody>
         ${detail.items.map(it => `
           <tr>
-            <td class="text-small">${it.catalog_number}</td>
-            <td>${it.name_zh}</td>
+            <td class="text-small">${escHtml(it.catalog_number || it.custom_catalog_number || '')}</td>
+            <td>${escHtml(it.name_zh || it.custom_item_name || '')}</td>
             <td style="text-align:center">${it.quantity}</td>
             <td style="text-align:right">${it.unit_price_snapshot > 0 ? formatPrice(it.unit_price_snapshot) : '洽詢'}</td>
           </tr>
