@@ -1,5 +1,5 @@
 // ── Init ──────────────────────────────────────────────────────
-const REVIEWER_ROLES = ['admin', 'finance', 'management', 'gm'];
+const REVIEWER_ROLES = ['admin', 'finance', 'management', 'gm', 'pm'];
 const ADMIN_ONLY_ROLES = ['admin'];
 
 let _currentUser = null;
@@ -20,7 +20,9 @@ let _currentUser = null;
   if (!ADMIN_ONLY_ROLES.includes(user.role)) {
     document.querySelectorAll('.tab-btn').forEach(btn => {
       const tab = btn.getAttribute('onclick')?.match(/switchTab\('(\w+)'\)/)?.[1];
-      if (['pricing', 'products', 'users'].includes(tab)) btn.style.display = 'none';
+      if (['pricing', 'products', 'users', 'bom', 'import'].includes(tab)) btn.style.display = 'none';
+      // PM 只能看審批人員
+      if (_currentUser?.role === 'pm' && tab !== 'approvals') btn.style.display = 'none';
     });
   }
 
@@ -35,10 +37,12 @@ function switchTab(name) {
   event.currentTarget.classList.add('active');
   document.getElementById(`tab-${name}`).classList.add('active');
 
-  if (name === 'quotes')   loadQuotes();
-  if (name === 'pricing')  loadPricing();
-  if (name === 'products') loadProducts();
-  if (name === 'users')    loadUsers();
+  if (name === 'quotes')    loadQuotes();
+  if (name === 'pricing')   loadPricing();
+  if (name === 'products')  loadProducts();
+  if (name === 'users')     loadUsers();
+  if (name === 'bom')       loadBoms();
+  if (name === 'approvals') loadChain();
 }
 
 // ── Quotes ────────────────────────────────────────────────────
@@ -238,12 +242,14 @@ async function loadProducts() {
       <td class="text-small">${p.catalog_number}</td>
       <td>${p.name_zh}</td>
       <td class="text-small text-muted">${CATEGORY_LABELS[p.category] || p.category}</td>
+      <td class="text-small">${p.pm_name ? `<span class="role-badge role-pm">${p.pm_name}</span>` : '<span class="text-muted">—</span>'}</td>
       <td>
         <span class="status-badge" style="background:${p.active ? '#D4EDDA' : '#F8D7DA'}; color:${p.active ? '#155724' : '#721C24'}">
           ${p.active ? '啟用' : '停用'}
         </span>
       </td>
-      <td>
+      <td style="display:flex; gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="openEditProduct(${p.id}, '${escapeJs(p.catalog_number)}', '${escapeJs(p.name_zh)}', '${escapeJs(p.name_en||'')}', '${p.category}', '${escapeJs(p.description||'')}', '${escapeJs(p.notes||'')}', ${p.sort_order??99}, ${p.pm_user_id||'null'})">編輯</button>
         <button class="btn btn-outline btn-sm" onclick="toggleProduct(${p.id}, ${p.active})">
           ${p.active ? '停用' : '啟用'}
         </button>
@@ -252,39 +258,81 @@ async function loadProducts() {
   `).join('');
 }
 
-function openAddProduct() {
+let _pmUsers = [];
+async function _loadPmUsers() {
+  if (_pmUsers.length) return;
+  const res = await apiFetch('/api/admin/users');
+  if (res && res.ok) {
+    const users = await res.json();
+    _pmUsers = users.filter(u => u.role === 'pm');
+    const sel = document.getElementById('np_pm');
+    sel.innerHTML = '<option value="">— 不指派 —</option>' +
+      _pmUsers.map(u => `<option value="${u.id}">${u.display_name} (${u.username})</option>`).join('');
+  }
+}
+
+async function openAddProduct() {
+  document.getElementById('np_id').value = '';
   ['np_code','np_name_zh','np_name_en','np_desc','np_notes'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('np_sort').value = '99';
   document.getElementById('np_category').value = 'accessory';
+  document.getElementById('np_code').disabled = false;
+  document.getElementById('productModalTitle').textContent = '新增產品';
+  document.getElementById('productModalSaveBtn').textContent = '新增';
+  await _loadPmUsers();
+  document.getElementById('np_pm').value = '';
+  document.getElementById('productModal').classList.add('open');
+}
+
+async function openEditProduct(id, code, name_zh, name_en, category, desc, notes, sort, pmUserId) {
+  document.getElementById('np_id').value = id;
+  document.getElementById('np_code').value = code;
+  document.getElementById('np_code').disabled = true;
+  document.getElementById('np_name_zh').value = name_zh;
+  document.getElementById('np_name_en').value = name_en;
+  document.getElementById('np_category').value = category;
+  document.getElementById('np_desc').value = desc;
+  document.getElementById('np_notes').value = notes;
+  document.getElementById('np_sort').value = sort;
+  document.getElementById('productModalTitle').textContent = '編輯產品';
+  document.getElementById('productModalSaveBtn').textContent = '儲存';
+  await _loadPmUsers();
+  document.getElementById('np_pm').value = pmUserId || '';
   document.getElementById('productModal').classList.add('open');
 }
 
 async function saveProduct() {
+  const id = document.getElementById('np_id').value;
   const code = document.getElementById('np_code').value.trim();
   const name = document.getElementById('np_name_zh').value.trim();
-  if (!code || !name) { showToast('料號和中文名稱為必填', 'error'); return; }
+  if (!name) { showToast('中文名稱為必填', 'error'); return; }
+  if (!id && !code) { showToast('料號為必填', 'error'); return; }
 
   const body = {
-    catalog_number: code,
     name_zh: name,
     name_en: document.getElementById('np_name_en').value.trim(),
     category: document.getElementById('np_category').value,
     description: document.getElementById('np_desc').value.trim(),
     notes: document.getElementById('np_notes').value.trim(),
     sort_order: parseInt(document.getElementById('np_sort').value) || 99,
+    pm_user_id: document.getElementById('np_pm').value || null,
   };
 
-  const res = await apiFetch('/api/admin/products', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
+  let res;
+  if (id) {
+    res = await apiFetch(`/api/admin/products/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+  } else {
+    body.catalog_number = code;
+    res = await apiFetch('/api/admin/products', { method: 'POST', body: JSON.stringify(body) });
+  }
+
   if (!res || !res.ok) {
     const err = await res?.json();
-    showToast(err?.error || '新增失敗', 'error');
+    showToast(err?.error || (id ? '修改失敗' : '新增失敗'), 'error');
     return;
   }
   closeModal('productModal');
-  showToast('產品已新增', 'success');
+  showToast(id ? '產品已更新' : '產品已新增', 'success');
   loadProducts();
 }
 
@@ -516,6 +564,249 @@ async function confirmImport() {
     document.getElementById('confirmImportBtn').disabled = false;
     document.getElementById('confirmImportBtn').textContent = '✅ 確認匯入';
   }
+}
+
+// ── Approval Chain ────────────────────────────────────────────
+async function loadChain() {
+  const res = await apiFetch('/api/approvals/chain');
+  if (!res || !res.ok) return;
+  const chain = await res.json();
+
+  const tbody = document.getElementById('chainBody');
+  if (!chain.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted">尚未設定審批人員，報價單提交後將由管理員直接核准</td></tr>';
+    return;
+  }
+  tbody.innerHTML = chain.map(c => `
+    <tr>
+      <td style="text-align:center">${c.step_order}</td>
+      <td><strong>${c.display_name}</strong></td>
+      <td class="text-small text-muted">${c.username}</td>
+      <td><span class="role-badge role-${c.role}">${ROLE_LABELS[c.role] || c.role}</span></td>
+      <td class="text-small text-muted">${c.email || '—'}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" style="color:#DC3545;border-color:#DC3545" onclick="removeChainMember(${c.id}, '${escapeJs(c.display_name)}')">移除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openAddChainMember() {
+  const res = await apiFetch('/api/approvals/eligible');
+  if (!res || !res.ok) return;
+  const users = await res.json();
+
+  const sel = document.getElementById('chain_user_id');
+  sel.innerHTML = '<option value="">— 選擇 —</option>' +
+    users.map(u => `<option value="${u.id}">${u.display_name}（${ROLE_LABELS[u.role] || u.role}）</option>`).join('');
+  document.getElementById('chain_order').value = '99';
+  document.getElementById('chainModal').classList.add('open');
+}
+
+async function saveChainMember() {
+  const userId = document.getElementById('chain_user_id').value;
+  const order  = parseInt(document.getElementById('chain_order').value) || 99;
+  if (!userId) { showToast('請選擇人員', 'error'); return; }
+
+  const res = await apiFetch('/api/approvals/chain', {
+    method: 'POST',
+    body: JSON.stringify({ user_id: parseInt(userId), step_order: order }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json();
+    showToast(err?.error || '新增失敗', 'error');
+    return;
+  }
+  closeModal('chainModal');
+  showToast('已加入審批鏈', 'success');
+  loadChain();
+}
+
+async function removeChainMember(id, name) {
+  if (!confirm(`確定移除「${name}」嗎？`)) return;
+  const res = await apiFetch(`/api/approvals/chain/${id}`, { method: 'DELETE' });
+  if (!res || !res.ok) { showToast('移除失敗', 'error'); return; }
+  showToast('已移除', 'success');
+  loadChain();
+}
+
+// ── BOM Management ────────────────────────────────────────────
+let _currentBomId = null;
+let _allProducts   = [];
+
+async function loadBoms() {
+  const res = await apiFetch('/api/admin/boms');
+  if (!res || !res.ok) return;
+  const boms = await res.json();
+
+  const tbody = document.getElementById('bomBody');
+  if (!boms.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-muted">尚無 BOM，請點右上角新增</td></tr>';
+    return;
+  }
+  tbody.innerHTML = boms.map(b => `
+    <tr>
+      <td><strong>${b.name}</strong></td>
+      <td class="text-small text-muted">${b.description || '—'}</td>
+      <td style="text-align:center">${b.item_count}</td>
+      <td class="price-cost">${b.total_cost > 0 ? formatPrice(b.total_cost) : '—'}</td>
+      <td class="price-suggest">${b.total_suggested > 0 ? formatPrice(b.total_suggested) : '—'}</td>
+      <td>
+        <span class="status-badge" style="background:${b.active ? '#D4EDDA':'#F8D7DA'}; color:${b.active ? '#155724':'#721C24'}">
+          ${b.active ? '啟用' : '停用'}
+        </span>
+      </td>
+      <td style="display:flex; gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="openBomDetail(${b.id}, '${escapeJs(b.name)}')">明細</button>
+        <button class="btn btn-outline btn-sm" onclick="openEditBom(${b.id}, '${escapeJs(b.name)}', '${escapeJs(b.description||'')}', ${b.active})">編輯</button>
+        <button class="btn btn-outline btn-sm" style="color:#DC3545; border-color:#DC3545" onclick="deleteBom(${b.id}, '${escapeJs(b.name)}')">刪除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openAddBom() {
+  document.getElementById('bom_id').value = '';
+  document.getElementById('bom_name').value = '';
+  document.getElementById('bom_desc').value = '';
+  document.getElementById('bomModalTitle').textContent = '新增 BOM';
+  document.getElementById('bomModalSaveBtn').textContent = '新增';
+  document.getElementById('bomModal').classList.add('open');
+}
+
+function openEditBom(id, name, desc, active) {
+  document.getElementById('bom_id').value = id;
+  document.getElementById('bom_name').value = name;
+  document.getElementById('bom_desc').value = desc;
+  document.getElementById('bomModalTitle').textContent = '編輯 BOM';
+  document.getElementById('bomModalSaveBtn').textContent = '儲存';
+  document.getElementById('bomModal').classList.add('open');
+}
+
+async function saveBom() {
+  const id   = document.getElementById('bom_id').value;
+  const name = document.getElementById('bom_name').value.trim();
+  if (!name) { showToast('BOM 名稱為必填', 'error'); return; }
+
+  const body = { name, description: document.getElementById('bom_desc').value.trim() };
+  const res  = id
+    ? await apiFetch(`/api/admin/boms/${id}`, { method: 'PUT', body: JSON.stringify({ ...body, active: 1 }) })
+    : await apiFetch('/api/admin/boms', { method: 'POST', body: JSON.stringify(body) });
+
+  if (!res || !res.ok) { showToast('儲存失敗', 'error'); return; }
+  closeModal('bomModal');
+  showToast(id ? 'BOM 已更新' : 'BOM 已建立', 'success');
+  loadBoms();
+}
+
+async function deleteBom(id, name) {
+  if (!confirm(`確定刪除「${name}」及其所有品項？`)) return;
+  const res = await apiFetch(`/api/admin/boms/${id}`, { method: 'DELETE' });
+  if (!res || !res.ok) { showToast('刪除失敗', 'error'); return; }
+  showToast('已刪除', 'success');
+  loadBoms();
+}
+
+async function openBomDetail(bomId, bomName) {
+  _currentBomId = bomId;
+  document.getElementById('bomDetailTitle').textContent = `BOM 明細：${bomName}`;
+  document.getElementById('bomItemsBody').innerHTML = '<tr><td colspan="8" class="text-muted">載入中…</td></tr>';
+  document.getElementById('bomDetailModal').classList.add('open');
+
+  // 預載所有產品到下拉選單（只抓一次）
+  if (!_allProducts.length) {
+    const pr = await apiFetch('/api/admin/products');
+    if (pr && pr.ok) _allProducts = await pr.json();
+  }
+  const sel = document.getElementById('bom_add_product');
+  sel.innerHTML = '<option value="">— 選擇產品 —</option>' +
+    _allProducts.filter(p => p.active).map(p =>
+      `<option value="${p.id}">[${p.catalog_number}] ${p.name_zh}</option>`
+    ).join('');
+
+  await renderBomItems();
+}
+
+async function renderBomItems() {
+  const res = await apiFetch(`/api/admin/boms/${_currentBomId}/items`);
+  if (!res || !res.ok) return;
+  const { items } = await res.json();
+
+  const tbody = document.getElementById('bomItemsBody');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-muted">尚無品項，請從上方選擇產品加入</td></tr>';
+    document.getElementById('bomItemsFoot').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = items.map(it => `
+    <tr>
+      <td class="text-small">${it.catalog_number}</td>
+      <td>${it.name_zh}</td>
+      <td style="text-align:center">
+        <input type="number" value="${it.quantity}" min="1"
+          style="width:60px; padding:4px 6px; border:1px solid #DDD; border-radius:4px; text-align:center"
+          onchange="updateBomItemQty(${it.id}, this.value, '${escapeJs(it.notes||'')}')">
+      </td>
+      <td class="price-cost text-right">${it.cost_price > 0 ? formatPrice(it.cost_price) : '—'}</td>
+      <td class="price-suggest text-right">${it.suggested_price > 0 ? formatPrice(it.suggested_price) : '—'}</td>
+      <td class="price-suggest text-right">${it.suggested_price > 0 ? formatPrice(it.suggested_price * it.quantity) : '—'}</td>
+      <td class="text-small text-muted">${it.notes || '—'}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" style="color:#DC3545; border-color:#DC3545"
+          onclick="removeBomItem(${it.id})">移除</button>
+      </td>
+    </tr>
+  `).join('');
+
+  const totalCost      = items.reduce((s, it) => s + (it.cost_price||0) * it.quantity, 0);
+  const totalSuggested = items.reduce((s, it) => s + (it.suggested_price||0) * it.quantity, 0);
+  document.getElementById('bomItemsFoot').innerHTML = `
+    <tr style="font-weight:700; background:#F5F5F7">
+      <td colspan="3" style="text-align:right">合計</td>
+      <td class="price-cost text-right">${totalCost > 0 ? formatPrice(totalCost) : '—'}</td>
+      <td class="price-suggest text-right"></td>
+      <td class="price-suggest text-right">${totalSuggested > 0 ? formatPrice(totalSuggested) : '—'}</td>
+      <td colspan="2"></td>
+    </tr>
+  `;
+}
+
+async function addBomItem() {
+  const productId = document.getElementById('bom_add_product').value;
+  const quantity  = parseInt(document.getElementById('bom_add_qty').value) || 1;
+  const notes     = document.getElementById('bom_add_notes').value.trim();
+  if (!productId) { showToast('請選擇產品', 'error'); return; }
+
+  const res = await apiFetch(`/api/admin/boms/${_currentBomId}/items`, {
+    method: 'POST',
+    body: JSON.stringify({ product_id: productId, quantity, notes }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json();
+    showToast(err?.error || '加入失敗', 'error');
+    return;
+  }
+  document.getElementById('bom_add_product').value = '';
+  document.getElementById('bom_add_qty').value = '1';
+  document.getElementById('bom_add_notes').value = '';
+  showToast('已加入', 'success');
+  await renderBomItems();
+}
+
+async function updateBomItemQty(itemId, qty, notes) {
+  await apiFetch(`/api/admin/boms/${_currentBomId}/items/${itemId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ quantity: parseInt(qty)||1, notes }),
+  });
+  await renderBomItems();
+}
+
+async function removeBomItem(itemId) {
+  const res = await apiFetch(`/api/admin/boms/${_currentBomId}/items/${itemId}`, { method: 'DELETE' });
+  if (!res || !res.ok) { showToast('移除失敗', 'error'); return; }
+  showToast('已移除', 'success');
+  await renderBomItems();
 }
 
 function resetImport() {

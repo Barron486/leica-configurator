@@ -1,8 +1,53 @@
 // ── State ─────────────────────────────────────────────────────
 let user = null;
 let products = [];
-let selected = new Set(); // product ids
-let baseProduct = null;
+let selected     = new Map(); // id → quantity
+let customPrices = new Map(); // id → manually entered price
+let baseProduct  = null;
+
+// ── Price helpers ─────────────────────────────────────────────
+function getPriceKey() {
+  return user.role === 'customer' ? 'retail_price' : 'suggested_price';
+}
+
+function getEffectivePrice(p) {
+  if (customPrices.has(p.id)) return customPrices.get(p.id);
+  return p[getPriceKey()] || 0;
+}
+
+function setCustomPrice(id, value) {
+  const num = Math.round(parseFloat(value));
+  if (!isNaN(num) && num > 0) {
+    customPrices.set(id, num);
+  } else {
+    customPrices.delete(id);
+  }
+  renderSummary();
+}
+
+// 報價單內直接編輯單價 — 不重繪整張報價單，只更新小計與合計
+function updateInvoicePrice(id, qty, inputEl) {
+  const num = Math.round(parseFloat(inputEl.value));
+  if (!isNaN(num) && num > 0) {
+    customPrices.set(id, num);
+    const sub = document.getElementById(`invoice-sub-${id}`);
+    if (sub) sub.textContent = formatPrice(num * qty);
+  } else {
+    customPrices.delete(id);
+    const sub = document.getElementById(`invoice-sub-${id}`);
+    if (sub) sub.textContent = '';
+  }
+  _refreshInvoiceTotal();
+  renderSummary();
+}
+
+function _refreshInvoiceTotal() {
+  const items = products.filter(p => selected.has(p.id));
+  const total   = items.reduce((s, p) => s + getEffectivePrice(p) * (selected.get(p.id) || 1), 0);
+  const allFree = items.every(p => getEffectivePrice(p) === 0);
+  const el = document.getElementById('invoice-total-amount');
+  if (el) el.textContent = allFree ? '請洽業務' : formatPrice(total);
+}
 
 // ── Init ──────────────────────────────────────────────────────
 (async function init() {
@@ -40,8 +85,8 @@ let baseProduct = null;
   if (!res || !res.ok) return;
   products = await res.json();
 
-  // Pre-select base unit + all included items
-  products.filter(p => p.is_base_unit || p.is_included_in_base).forEach(p => selected.add(p.id));
+  // Pre-select base unit + all included items (qty = 1)
+  products.filter(p => p.is_base_unit || p.is_included_in_base).forEach(p => selected.set(p.id, 1));
   baseProduct = products.find(p => p.is_base_unit);
 
   renderProducts();
@@ -77,6 +122,7 @@ function renderProducts() {
       const isBase = p.is_base_unit;
       const isIncluded = p.is_included_in_base && !p.is_base_unit;
       const isSel = selected.has(p.id);
+      const qty   = selected.get(p.id) || 1;
 
       html += `<div class="product-item ${isSel ? 'selected' : ''} ${isBase ? 'base-item' : ''}" onclick="toggleProduct(${p.id})">`;
       html += `<input type="checkbox" ${isSel ? 'checked' : ''} ${isBase ? 'disabled' : ''} onclick="event.stopPropagation(); toggleProduct(${p.id})">`;
@@ -87,9 +133,18 @@ function renderProducts() {
       if (p.notes) html += `<div class="product-note">⚠ ${p.notes}</div>`;
       html += `</div>`;
 
-      // Price column
+      // Price + qty stepper
       html += `<div class="product-price">`;
       html += renderPriceColumn(p);
+
+      // 數量調整器：僅在已選且非基礎主機時顯示
+      if (isSel && !isBase) {
+        html += `<div class="qty-stepper" onclick="event.stopPropagation()">
+          <button class="qty-btn" onclick="changeQty(${p.id}, -1)">−</button>
+          <span class="qty-val">${qty}</span>
+          <button class="qty-btn" onclick="changeQty(${p.id}, 1)">+</button>
+        </div>`;
+      }
       html += `</div></div>`;
     }
     html += `</div>`;
@@ -100,38 +155,54 @@ function renderProducts() {
 
 function renderPriceColumn(p) {
   const currency = p.currency || 'TWD';
+  const fmt = (v) => (v && v > 0) ? formatPrice(v, currency) : '';
 
   if (user.role === 'admin') {
     return `
-      <div class="price-label">零售</div><div class="price-retail">${formatPrice(p.retail_price, currency)}</div>
-      <div class="price-label">建議</div><div class="price-suggest">${formatPrice(p.suggested_price, currency)}</div>
-      <div class="price-min">最低 ${formatPrice(p.min_sell_price, currency)}</div>
-      <div class="price-cost">成本 ${formatPrice(p.cost_price, currency)}</div>
+      ${p.retail_price    > 0 ? `<div class="price-label">零售</div><div class="price-retail">${fmt(p.retail_price)}</div>` : ''}
+      ${p.suggested_price > 0 ? `<div class="price-label">建議</div><div class="price-suggest">${fmt(p.suggested_price)}</div>` : ''}
+      ${p.min_sell_price  > 0 ? `<div class="price-min">最低 ${fmt(p.min_sell_price)}</div>` : ''}
+      ${p.cost_price      > 0 ? `<div class="price-cost">成本 ${fmt(p.cost_price)}</div>` : ''}
     `;
   } else if (user.role === 'sales') {
     return `
-      <div class="price-label">建議報價</div>
-      <div class="price-suggest">${formatPrice(p.suggested_price, currency)}</div>
-      <div class="price-min">最低 ${formatPrice(p.min_sell_price, currency)}</div>
-      <div class="price-label">零售</div><div class="price-retail">${formatPrice(p.retail_price, currency)}</div>
+      ${p.suggested_price > 0 ? `<div class="price-label">建議報價</div><div class="price-suggest">${fmt(p.suggested_price)}</div>` : ''}
+      ${p.min_sell_price  > 0 ? `<div class="price-min">最低 ${fmt(p.min_sell_price)}</div>` : ''}
+      ${p.retail_price    > 0 ? `<div class="price-label">零售</div><div class="price-retail">${fmt(p.retail_price)}</div>` : ''}
     `;
   } else {
-    const price = p.retail_price;
-    return price && price > 0
-      ? `<div class="price-retail" style="font-size:14px">${formatPrice(price, currency)}</div>`
-      : `<div class="price-zero">洽詢報價</div>`;
+    return p.retail_price > 0
+      ? `<div class="price-retail" style="font-size:14px">${fmt(p.retail_price)}</div>`
+      : '';
   }
 }
 
 // ── Toggle selection ─────────────────────────────────────────
 function toggleProduct(id) {
   const p = products.find(x => x.id === id);
-  if (!p || p.is_base_unit) return; // base is always selected
+  if (!p || p.is_base_unit) return;
 
   if (selected.has(id)) {
     selected.delete(id);
   } else {
-    selected.add(id);
+    selected.set(id, 1);
+  }
+  renderProducts();
+  renderSummary();
+}
+
+// ── Change quantity ───────────────────────────────────────────
+function changeQty(id, delta) {
+  if (!selected.has(id)) return;
+  const newQty = (selected.get(id) || 1) + delta;
+  if (newQty < 1) {
+    // 減到 0 = 取消選取（基礎主機除外）
+    const p = products.find(x => x.id === id);
+    if (p && !p.is_base_unit) selected.delete(id);
+  } else if (newQty > 99) {
+    return;
+  } else {
+    selected.set(id, newQty);
   }
   renderProducts();
   renderSummary();
@@ -153,23 +224,27 @@ function renderSummary() {
     return;
   }
 
-  // Determine price key to display
-  const priceKey = user.role === 'customer' ? 'retail_price' : 'suggested_price';
-
   let total = 0;
   let totalMin = 0, totalCost = 0, totalRetail = 0;
   let rows = '';
 
   for (const p of items) {
-    const price = p[priceKey] || 0;
-    total += price;
-    totalMin += p.min_sell_price || 0;
-    totalCost += p.cost_price || 0;
-    totalRetail += p.retail_price || 0;
+    const qty      = selected.get(p.id) || 1;
+    const effPrice = getEffectivePrice(p);
+    const lineTotal = effPrice * qty;
+    total       += lineTotal;
+    totalMin    += (p.min_sell_price || 0) * qty;
+    totalCost   += (p.cost_price     || 0) * qty;
+    totalRetail += (p.retail_price   || 0) * qty;
+
+    const priceDisplay = lineTotal > 0
+      ? formatPrice(lineTotal, p.currency)
+      : customPrices.has(p.id) ? '' : '';  // 無資料時留空
 
     rows += `<tr>
-      <td>${p.name_zh}<br><span class="text-muted" style="font-size:11px">${p.catalog_number}</span></td>
-      <td>${price > 0 ? formatPrice(price, p.currency) : '—'}</td>
+      <td>${p.name_zh}${qty > 1 ? ` <span style="color:#1565C0;font-size:11px">×${qty}</span>` : ''}<br>
+          <span class="text-muted" style="font-size:11px">${p.catalog_number}</span></td>
+      <td>${priceDisplay}</td>
     </tr>`;
   }
 
@@ -248,6 +323,20 @@ function openQuoteModal() {
   document.getElementById('quoteModal').classList.add('open');
 }
 
+// ── Category labels (shared with renderProducts) ──────────────
+const INVOICE_CATEGORY_LABELS = {
+  base:         '基礎主機',
+  orientation:  '檢體夾具固定裝置',
+  clamping:     '快速夾緊系統',
+  holder:       '檢體夾具',
+  blade_base:   '刀架底座',
+  blade_holder: '刀架 / 刀片架',
+  blade:        '刀片（耗材）',
+  cooling:      '冷卻系統',
+  lighting:     '照明與觀察',
+  accessory:    '其他配件',
+};
+
 function renderInvoice() {
   const items = products.filter(p => selected.has(p.id));
   const priceKey = user.role === 'customer' ? 'retail_price' : 'suggested_price';
@@ -264,114 +353,221 @@ function renderInvoice() {
   const expDate = new Date(now.getTime() + validDays * 86400000)
     .toLocaleDateString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit' });
 
-  const total   = items.reduce((s, p) => s + (p[priceKey] || 0), 0);
-  const allFree = items.every(p => !p[priceKey] || p[priceKey] === 0);
+  const total   = items.reduce((s, p) => s + getEffectivePrice(p) * (selected.get(p.id) || 1), 0);
+  const allFree = items.every(p => getEffectivePrice(p) === 0);
 
-  const rows = items.map(p => `
-    <tr style="border-bottom:1px solid #E8E8ED">
-      <td style="padding:12px 0; color:#1D1D1F">${p.name_zh}</td>
-      <td style="padding:12px 0; color:#86868B; font-size:12px">${p.catalog_number}</td>
-      <td style="padding:12px 0; text-align:center; color:#1D1D1F">1</td>
-      <td style="padding:12px 0; text-align:right; color:#1D1D1F; font-weight:500">
-        ${p[priceKey] > 0 ? formatPrice(p[priceKey]) : '<span style="color:#86868B">洽詢</span>'}
-      </td>
-    </tr>`).join('');
+  // ── 依類別分組並建立表格列 ─────────────────────────────────
+  const categoryOrder = ['base','orientation','clamping','holder','blade_base','blade_holder','blade','cooling','lighting','accessory'];
+  const grouped = {};
+  items.forEach(p => {
+    if (!grouped[p.category]) grouped[p.category] = [];
+    grouped[p.category].push(p);
+  });
+
+  let rowNum = 0;
+  let tableRows = '';
+  for (const cat of categoryOrder) {
+    const catItems = grouped[cat];
+    if (!catItems) continue;
+    // 分類標題列
+    tableRows += `
+      <tr>
+        <td colspan="5" style="
+          padding: 7px 10px 5px;
+          font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+          color: #E3001B; background: #FFF5F5; border-top: 1px solid #FADAD9;
+        ">${INVOICE_CATEGORY_LABELS[cat] || cat}</td>
+      </tr>`;
+    catItems.forEach(p => {
+      rowNum++;
+      const qty       = selected.get(p.id) || 1;
+      const unitPrice = getEffectivePrice(p);
+      const subtotal  = unitPrice * qty;
+      const bg = rowNum % 2 === 0 ? '#FAFAFA' : '#FFFFFF';
+      const canEdit   = user.role !== 'customer';
+
+      // 單價欄：可編輯（非客戶）或純文字（客戶）
+      const priceCell = canEdit
+        ? `<input
+            id="invoice-price-${p.id}"
+            class="invoice-price-input"
+            type="number" min="0" step="1000"
+            value="${unitPrice > 0 ? unitPrice : ''}"
+            placeholder=""
+            oninput="updateInvoicePrice(${p.id}, ${qty}, this)"
+            onclick="event.stopPropagation()"
+          >`
+        : (unitPrice > 0 ? formatPrice(unitPrice) : '');
+
+      tableRows += `
+        <tr style="background:${bg}">
+          <td style="padding:9px 10px; color:#222; font-size:12.5px; line-height:1.4">
+            ${p.name_zh}
+            ${p.is_included_in_base && !p.is_base_unit ? '<span style="font-size:10px;color:#28A745;margin-left:4px">（含於主機）</span>' : ''}
+          </td>
+          <td style="padding:9px 10px; color:#888; font-size:11px; font-family:monospace; white-space:nowrap">${p.catalog_number}</td>
+          <td style="padding:9px 10px; text-align:right; color:#555; font-size:12px; white-space:nowrap">
+            ${priceCell}
+          </td>
+          <td style="padding:9px 10px; text-align:center; color:#1A1A2E; font-size:12.5px; font-weight:600">${qty}</td>
+          <td id="invoice-sub-${p.id}" style="padding:9px 10px; text-align:right; color:#1A1A2E; font-size:12.5px; font-weight:700; white-space:nowrap">
+            ${subtotal > 0 ? formatPrice(subtotal) : ''}
+          </td>
+        </tr>`;
+    });
+  }
 
   const notesHtml = customNotes
-    ? `<div style="margin-top:12px; font-size:11px; color:#1D1D1F; white-space:pre-wrap; line-height:1.7">${customNotes}</div>`
+    ? `<div style="margin-top:10px; padding:10px 12px; background:#FFFBF0; border-left:3px solid #F0AD00; border-radius:0 4px 4px 0; font-size:11px; color:#333; white-space:pre-wrap; line-height:1.8">${customNotes}</div>`
     : '';
 
   document.getElementById('quotePreviewBody').innerHTML = `
     <div id="printArea" style="
-      font-family: -apple-system, 'Noto Sans TC', Helvetica, sans-serif;
-      background: white; color: #1D1D1F; padding: 40px;
-      border-radius: 12px; border: 1px solid #E8E8ED;
+      font-family: -apple-system, 'Noto Sans TC', Helvetica, Arial, sans-serif;
+      background: white; color: #1A1A2E;
+      border-radius: 10px; border: 1px solid #E0E0E0;
+      overflow: hidden;
     ">
 
-      <!-- 表頭 -->
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:36px; padding-bottom:24px; border-bottom:2px solid #1D1D1F">
-        <div>
-          <div style="font-size:22px; font-weight:700; letter-spacing:-0.3px; color:#1D1D1F">正茂生物科技</div>
-          <div style="font-size:12px; color:#86868B; margin-top:2px; letter-spacing:0.5px">GENMALL BIOTECH CO., LTD.</div>
-          <div style="font-size:11px; color:#86868B; margin-top:8px; line-height:1.8">
-            台灣 · Leica Biosystems 授權代理商
-          </div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:13px; font-weight:600; color:#86868B; letter-spacing:1px; text-transform:uppercase; margin-bottom:6px">報  價  單</div>
-          <div style="font-size:11px; color:#86868B; line-height:2">
-            報價日期：${dateStr}<br>
-            有效期限：${expDate}（${validDays} 天）<br>
-            負責業務：${user.display_name || user.username}
-          </div>
-        </div>
-      </div>
+      <!-- ▌頂部品牌色帶 -->
+      <div style="background:#E3001B; height:5px"></div>
 
-      <!-- 客戶資訊 -->
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:36px">
-        <div>
-          <div style="font-size:10px; font-weight:600; color:#86868B; letter-spacing:1px; text-transform:uppercase; margin-bottom:8px">報價對象</div>
-          <div style="font-size:14px; font-weight:600; color:#1D1D1F">${custName}</div>
-          ${custOrg   ? `<div style="font-size:13px; color:#1D1D1F; margin-top:2px">${custOrg}</div>` : ''}
-          ${custPhone ? `<div style="font-size:12px; color:#86868B; margin-top:4px">📞 ${custPhone}</div>` : ''}
-          ${custEmail ? `<div style="font-size:12px; color:#86868B; margin-top:2px">✉ ${custEmail}</div>` : ''}
-        </div>
-        <div>
-          <div style="font-size:10px; font-weight:600; color:#86868B; letter-spacing:1px; text-transform:uppercase; margin-bottom:8px">產品系列</div>
-          <div style="font-size:13px; color:#1D1D1F">Leica HistoCore MULTICUT</div>
-          <div style="font-size:12px; color:#86868B; margin-top:2px">輪轉式切片機配置方案</div>
-        </div>
-      </div>
+      <!-- ▌頁首區域 -->
+      <div style="padding:28px 36px 22px; border-bottom:1px solid #EAEAEA">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start">
 
-      <!-- 品項表格 -->
-      <table style="width:100%; border-collapse:collapse; margin-bottom:24px">
-        <thead>
-          <tr style="border-bottom:1px solid #1D1D1F">
-            <th style="padding:8px 0; text-align:left; font-size:10px; font-weight:600; color:#86868B; letter-spacing:1px; text-transform:uppercase">品名</th>
-            <th style="padding:8px 0; text-align:left; font-size:10px; font-weight:600; color:#86868B; letter-spacing:1px; text-transform:uppercase">料號</th>
-            <th style="padding:8px 0; text-align:center; font-size:10px; font-weight:600; color:#86868B; letter-spacing:1px; text-transform:uppercase">數量</th>
-            <th style="padding:8px 0; text-align:right; font-size:10px; font-weight:600; color:#86868B; letter-spacing:1px; text-transform:uppercase">單價</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-
-      <!-- 合計 -->
-      <div style="border-top:2px solid #1D1D1F; padding-top:16px; margin-bottom:32px">
-        <div style="display:flex; justify-content:space-between; align-items:center">
+          <!-- 左：公司資訊 -->
           <div>
-            <div style="font-size:10px; font-weight:600; color:#86868B; letter-spacing:1px; text-transform:uppercase">合計金額</div>
-            <div style="font-size:11px; color:#86868B; margin-top:2px">新台幣（含稅）</div>
+            <div style="display:flex; align-items:baseline; gap:10px">
+              <span style="font-size:21px; font-weight:900; letter-spacing:0.5px; color:#1A1A2E">正茂生物科技</span>
+              <span style="width:1px; height:16px; background:#CCC; display:inline-block; vertical-align:middle"></span>
+              <span style="font-size:11px; color:#E3001B; font-weight:700; letter-spacing:1px">LEICA</span>
+              <span style="font-size:10px; color:#888; letter-spacing:0.3px">Authorized Distributor</span>
+            </div>
+            <div style="font-size:11.5px; color:#666; margin-top:5px">
+              GENMALL BIOTECH CO., LTD. &nbsp;·&nbsp; 台灣 Leica Biosystems 授權代理商
+            </div>
           </div>
-          <div style="font-size:22px; font-weight:700; color:#1D1D1F">
-            ${allFree ? '<span style="font-size:15px;color:#86868B">請洽業務</span>' : formatPrice(total)}
+
+          <!-- 右：報價單標題 -->
+          <div style="text-align:right">
+            <div style="
+              display:inline-block; background:#1A1A2E; color:white;
+              font-size:12px; font-weight:700; letter-spacing:3px;
+              padding:5px 14px; border-radius:4px; margin-bottom:8px;
+            ">報 價 單</div>
+            <div style="font-size:11px; color:#666; line-height:2">
+              報價日期：<strong style="color:#1A1A2E">${dateStr}</strong><br>
+              有效期限：<strong style="color:#E3001B">${expDate}</strong>（${validDays} 天）<br>
+              負責業務：<strong style="color:#1A1A2E">${user.display_name || user.username}</strong>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- 簽名欄 -->
-      <div style="display:flex; justify-content:space-between; margin-bottom:28px">
-        <div style="text-align:center">
-          <div style="border-bottom:1px solid #86868B; width:180px; height:40px; margin-bottom:6px"></div>
-          <div style="font-size:11px; color:#86868B">負責業務簽名</div>
-          <div style="font-size:12px; color:#1D1D1F; margin-top:2px">${user.display_name || user.username}</div>
+      <!-- ▌客戶 & 產品資訊 -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0; border-bottom:1px solid #EAEAEA">
+        <!-- 客戶資訊 -->
+        <div style="padding:18px 36px; border-right:1px solid #EAEAEA">
+          <div style="font-size:10px; font-weight:700; color:#E3001B; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:8px">報 價 對 象</div>
+          <div style="font-size:15px; font-weight:700; color:#1A1A2E">${custName}</div>
+          ${custOrg   ? `<div style="font-size:12.5px; color:#444; margin-top:3px">${custOrg}</div>` : ''}
+          ${custPhone ? `<div style="font-size:11.5px; color:#666; margin-top:5px">📞&nbsp; ${custPhone}</div>` : ''}
+          ${custEmail ? `<div style="font-size:11.5px; color:#666; margin-top:2px">✉&nbsp; ${custEmail}</div>` : ''}
         </div>
-        <div style="text-align:center">
-          <div style="border-bottom:1px solid #86868B; width:180px; height:40px; margin-bottom:6px"></div>
-          <div style="font-size:11px; color:#86868B">客戶確認簽名</div>
-          <div style="font-size:12px; color:#1D1D1F; margin-top:2px">${custName !== '（請填寫）' ? custName : ''}</div>
+        <!-- 產品說明 -->
+        <div style="padding:18px 36px; background:#FAFAFA">
+          <div style="font-size:10px; font-weight:700; color:#E3001B; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:8px">配 置 產 品</div>
+          <div style="font-size:14px; font-weight:700; color:#1A1A2E">Leica HistoCore MULTICUT</div>
+          <div style="font-size:12px; color:#666; margin-top:3px">輪轉式切片機配置方案</div>
+          <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap">
+            <span style="background:#E8F0FE; color:#1565C0; font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px">
+              共 ${items.length} 項配件
+            </span>
+            ${!allFree ? `<span style="background:#D4EDDA; color:#155724; font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px">
+              合計 ${formatPrice(total)}
+            </span>` : ''}
+          </div>
         </div>
       </div>
 
-      <!-- 備註 -->
-      <div style="border-top:1px solid #E8E8ED; padding-top:16px">
-        <div style="font-size:11px; color:#86868B; line-height:1.9">
-          <span style="font-weight:600">注意事項</span><br>
-          · 以上報價有效期 ${validDays} 天，逾期請重新詢價。<br>
-          · 實際售價以正式合約為準，價格如有調整恕不另行通知。<br>
-          · 原廠保固 1 年，可選購延長保固服務。
+      <!-- ▌品項明細表格 -->
+      <div style="padding:0 36px">
+        <table style="width:100%; border-collapse:collapse; margin:20px 0">
+          <thead>
+            <tr style="background:#1A1A2E">
+              <th style="padding:9px 10px; text-align:left; font-size:10px; font-weight:600; color:rgba(255,255,255,0.8); letter-spacing:1px">品名</th>
+              <th style="padding:9px 10px; text-align:left; font-size:10px; font-weight:600; color:rgba(255,255,255,0.8); letter-spacing:1px">料號</th>
+              <th style="padding:9px 10px; text-align:right; font-size:10px; font-weight:600; color:rgba(255,255,255,0.8); letter-spacing:1px">單價（TWD）</th>
+              <th style="padding:9px 10px; text-align:center; font-size:10px; font-weight:600; color:rgba(255,255,255,0.8); letter-spacing:1px">數量</th>
+              <th style="padding:9px 10px; text-align:right; font-size:10px; font-weight:600; color:rgba(255,255,255,0.8); letter-spacing:1px">小計（TWD）</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+
+      <!-- ▌合計金額區塊 -->
+      <div style="margin:0 36px 24px; border:1px solid #EAEAEA; border-radius:8px; overflow:hidden">
+        <div style="
+          display:flex; justify-content:space-between; align-items:center;
+          padding:16px 20px; background:${allFree ? '#F5F5F7' : '#1A1A2E'};
+        ">
+          <div>
+            <div style="font-size:11px; font-weight:600; letter-spacing:1px; color:${allFree ? '#666' : 'rgba(255,255,255,0.7)'}">合計金額（TWD）</div>
+            <div style="font-size:10px; color:${allFree ? '#999' : 'rgba(255,255,255,0.5)'}; margin-top:2px">含稅 · 新台幣</div>
+          </div>
+          <div id="invoice-total-amount" style="font-size:26px; font-weight:900; color:${allFree ? '#888' : 'white'}; letter-spacing:-0.5px">
+            ${allFree ? '請洽業務' : formatPrice(total)}
+          </div>
         </div>
-        ${notesHtml}
+        ${!allFree ? `<div style="padding:10px 20px; background:#F0F4FF; font-size:11px; color:#1565C0">
+          ✦ 以上報價均為含稅價格，幣別：新台幣（TWD）
+        </div>` : ''}
+      </div>
+
+      <!-- ▌簽名欄 + 注意事項 + 頁尾（整體 avoid page-break） -->
+      <div class="invoice-footer-block">
+
+        <!-- 簽名欄 -->
+        <div style="margin:0 36px 24px; display:grid; grid-template-columns:1fr 1fr; gap:20px">
+          <div style="border:1px dashed #CCC; border-radius:6px; padding:14px 16px; text-align:center">
+            <div style="height:44px"></div>
+            <div style="border-top:1px solid #AAA; padding-top:8px; margin-top:4px">
+              <div style="font-size:10px; font-weight:700; color:#888; letter-spacing:0.5px">負責業務 簽名 / 用章</div>
+              <div style="font-size:12px; color:#1A1A2E; margin-top:3px; font-weight:600">${user.display_name || user.username}</div>
+            </div>
+          </div>
+          <div style="border:1px dashed #CCC; border-radius:6px; padding:14px 16px; text-align:center">
+            <div style="height:44px"></div>
+            <div style="border-top:1px solid #AAA; padding-top:8px; margin-top:4px">
+              <div style="font-size:10px; font-weight:700; color:#888; letter-spacing:0.5px">客戶 確認簽名 / 用章</div>
+              <div style="font-size:12px; color:#1A1A2E; margin-top:3px; font-weight:600">${custName !== '（請填寫）' ? custName : ''}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 注意事項 & 自訂備註 -->
+        <div style="padding:16px 36px 24px; background:#F8F8FA; border-top:1px solid #EAEAEA">
+          <div style="font-size:10px; font-weight:700; color:#888; letter-spacing:1px; text-transform:uppercase; margin-bottom:8px">注意事項</div>
+          <div style="font-size:11px; color:#555; line-height:2">
+            &bull;&ensp;本報價單有效期限為 <strong>${validDays}</strong> 天（至 ${expDate}），逾期請重新詢價。<br>
+            &bull;&ensp;實際售價以正式採購合約為準，本公司保留調整價格之權利，恕不另行通知。<br>
+            &bull;&ensp;原廠標準保固 1 年，可洽業務加購延長保固方案。<br>
+            &bull;&ensp;如有任何疑問，請聯繫負責業務 <strong>${user.display_name || user.username}</strong>。
+          </div>
+          ${notesHtml}
+        </div>
+
+        <!-- 頁尾品牌條 -->
+        <div style="background:#1A1A2E; padding:10px 36px; display:flex; justify-content:space-between; align-items:center">
+          <div style="font-size:11px; font-weight:700; color:white; letter-spacing:2px">
+            LEICA<span style="color:#E3001B">.</span>
+            <span style="font-weight:300; letter-spacing:0.5px; margin-left:6px; font-size:10px">Biosystems</span>
+          </div>
+          <div style="font-size:10px; color:rgba(255,255,255,0.4)">正茂生物科技 · GENMALL BIOTECH</div>
+        </div>
+
       </div>
 
     </div>
@@ -385,6 +581,18 @@ function generatePDF() {
   const custName = document.getElementById('cust_name')?.value.trim() || '報價單';
   const now = new Date().toLocaleDateString('zh-TW').replace(/\//g, '');
 
+  // 複製並將 invoice-price-input 換成靜態文字，避免列印出現空白輸入框
+  const clone = invoiceEl.cloneNode(true);
+  clone.querySelectorAll('.invoice-price-input').forEach(input => {
+    const val = parseFloat(input.value);
+    const span = document.createElement('span');
+    span.style.cssText = 'font-size:12px;color:#555;font-weight:600';
+    span.textContent = val > 0
+      ? new Intl.NumberFormat('zh-TW', { style:'currency', currency:'TWD', maximumFractionDigits:0 }).format(val)
+      : '';
+    input.parentNode.replaceChild(span, input);
+  });
+
   const w = window.open('', '_blank');
   w.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
@@ -392,21 +600,36 @@ function generatePDF() {
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
       body {
-        font-family: -apple-system, 'Noto Sans TC', Helvetica, sans-serif;
-        background: white; padding: 32px 40px; color: #1D1D1F;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        font-family: -apple-system, 'PingFang TC', 'Noto Sans TC', Helvetica, Arial, sans-serif;
+        background: white;
+        color: #1A1A2E;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
-      @page { size: A4; margin: 15mm 20mm; }
+      @page {
+        size: A4;
+        margin: 12mm 14mm;
+      }
       @media print {
-        body { padding: 0; }
+        html, body { height: auto; }
         .no-print { display: none !important; }
+        #printArea {
+          border: none !important;
+          border-radius: 0 !important;
+          box-shadow: none !important;
+        }
+        .invoice-footer-block {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
       }
       table { width: 100%; border-collapse: collapse; }
+      #printArea { font-size: 12px; }
     </style>
-  </head><body>${invoiceEl.innerHTML}</body></html>`);
+  </head><body>${clone.outerHTML}</body></html>`);
   w.document.close();
   w.focus();
-  setTimeout(() => { w.print(); }, 600);
+  setTimeout(() => { w.print(); }, 700);
 }
 
 // ── Submit Quote ─────────────────────────────────────────────
@@ -414,7 +637,7 @@ async function submitQuote() {
   const customer_name = document.getElementById('cust_name').value.trim();
   if (!customer_name) { showToast('請先填寫客戶姓名', 'error'); return; }
 
-  const items = [...selected].map(id => ({ product_id: id, quantity: 1 }));
+  const items = [...selected.entries()].map(([id, qty]) => ({ product_id: id, quantity: qty }));
 
   const res = await apiFetch('/api/quotes', {
     method: 'POST',

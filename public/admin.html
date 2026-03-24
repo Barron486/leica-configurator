@@ -4,21 +4,54 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>管理後台 — Leica 配置選擇器</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
+<div class="app-shell">
 
-<header>
-  <div class="logo">LEICA<span>.</span> 管理後台</div>
-  <div class="user-info">
-    <span id="userName"></span>
-    <span id="roleBadge" class="role-badge"></span>
-    <a href="/index.html" class="btn btn-outline btn-sm">配置選擇器</a>
-    <button class="btn btn-outline btn-sm" onclick="logout()">登出</button>
-  </div>
-</header>
+  <!-- ── Sidebar ── -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo">LEICA<span>.</span></div>
+      <div class="sidebar-logo-sub">Biosystems</div>
+    </div>
 
-<div class="container mt-24">
+    <div class="sidebar-nav">
+      <div class="sidebar-section-label">Navigation</div>
+      <a href="/products.html" class="sidebar-link">
+        <span class="sidebar-link-icon">📦</span>產品目錄
+      </a>
+      <a href="/index.html" class="sidebar-link">
+        <span class="sidebar-link-icon">⚙</span>配置報價
+      </a>
+      <div id="adminLink" style="display:block">
+        <a href="/admin.html" class="sidebar-link active">
+          <span class="sidebar-link-icon">⚡</span>管理後台
+        </a>
+      </div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-user">
+      <span id="userName" class="sidebar-username"></span>
+      <span id="roleBadge" class="role-badge"></span>
+      <button class="sidebar-logout" onclick="logout()">登出</button>
+    </div>
+  </nav>
+
+  <!-- ── Main Area ── -->
+  <div class="main-area">
+    <div class="main-topbar">
+      <div style="display:flex; align-items:baseline; gap:10px">
+        <span class="main-topbar-title">管理後台</span>
+        <span class="main-topbar-sub">Administration</span>
+      </div>
+    </div>
+
+    <div class="main-content">
+<div>
 
   <!-- Tabs -->
   <div class="tabs">
@@ -26,6 +59,8 @@
     <button class="tab-btn" onclick="switchTab('pricing')">💰 定價管理</button>
     <button class="tab-btn" onclick="switchTab('products')">📦 產品管理</button>
     <button class="tab-btn" onclick="switchTab('users')">👤 用戶管理</button>
+    <button class="tab-btn" onclick="switchTab('bom')">📋 BOM 管理</button>
+    <button class="tab-btn" id="tab-btn-approvals" onclick="switchTab('approvals')">🔐 審批人員</button>
     <button class="tab-btn" id="tab-btn-import" onclick="switchTab('import')">📥 匯入產品</button>
   </div>
 
@@ -36,7 +71,8 @@
         <strong>所有報價單</strong>
         <select id="quoteFilter" onchange="loadQuotes()" style="margin-left:12px; padding:5px 10px; border:1px solid #DDD; border-radius:4px">
           <option value="">全部狀態</option>
-          <option value="submitted">待審核</option>
+          <option value="pending_pm">待 PM 審核</option>
+          <option value="submitted">待管理部用印</option>
           <option value="pending_gm">待總經理審核</option>
           <option value="draft">草稿</option>
           <option value="approved">已核准</option>
@@ -104,6 +140,7 @@
             <th>料號</th>
             <th>中文名稱</th>
             <th>類別</th>
+            <th>負責 PM</th>
             <th>狀態</th>
             <th>操作</th>
           </tr>
@@ -140,6 +177,56 @@
     </div>
   </div>
 
+
+  <!-- Tab: BOM -->
+  <div id="tab-bom" class="tab-panel">
+    <div class="flex-between" style="margin-bottom:16px">
+      <strong>BOM 物料清單管理</strong>
+      <button class="btn btn-primary btn-sm" onclick="openAddBom()">+ 新增 BOM</button>
+    </div>
+    <div class="card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>BOM 名稱</th>
+            <th>說明</th>
+            <th>品項數</th>
+            <th>成本合計</th>
+            <th>建議報價合計</th>
+            <th>狀態</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="bomBody">
+          <tr><td colspan="7" class="text-muted">載入中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tab: Approvals -->
+  <div id="tab-approvals" class="tab-panel">
+    <div class="flex-between" style="margin-bottom:16px">
+      <div>
+        <strong>審批人員管理</strong>
+        <div class="text-small text-muted mt-8">設定報價單在管理部用印階段需要哪些人審核</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="openAddChainMember()">+ 新增審批人員</button>
+    </div>
+    <div class="card">
+      <table class="data-table">
+        <thead>
+          <tr><th>順序</th><th>姓名</th><th>帳號</th><th>角色</th><th>Email</th><th>操作</th></tr>
+        </thead>
+        <tbody id="chainBody">
+          <tr><td colspan="6" class="text-muted">載入中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="alert" style="background:#FFF3CD; color:#856404; margin-top:12px; display:block">
+      ⚠ 審批流程：提交 → <strong>PM 審核</strong>（若有指派）→ <strong>總經理</strong>（若毛利率 &lt; 15%）→ <strong>以下審批人員用印</strong> → 核准
+    </div>
+  </div>
 
   <!-- Tab: Import -->
   <div id="tab-import" class="tab-panel">
@@ -221,8 +308,11 @@
       <button class="btn btn-primary" style="margin-top:16px" onclick="resetImport()">繼續匯入</button>
     </div>
   </div>
+</div><!-- /content wrapper -->
 
-</div>
+    </div><!-- /main-content -->
+  </div><!-- /main-area -->
+</div><!-- /app-shell -->
 
 <!-- Quote Detail Modal -->
 <div class="modal-overlay" id="quoteDetailModal">
@@ -278,6 +368,7 @@
           <option value="finance">財務部</option>
           <option value="management">管理部</option>
           <option value="gm">總經理</option>
+          <option value="pm">PM（產品經理）</option>
         </select>
       </div>
       <div class="form-group"><label>顯示名稱</label><input type="text" id="u_display"></div>
@@ -290,14 +381,115 @@
   </div>
 </div>
 
-<!-- Add Product Modal -->
+<!-- Add Chain Member Modal -->
+<div class="modal-overlay" id="chainModal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <h3>新增審批人員</h3>
+      <button class="modal-close" onclick="closeModal('chainModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>選擇人員</label>
+        <select id="chain_user_id" style="width:100%">
+          <option value="">— 選擇 —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>順序號（數字越小越優先）</label>
+        <input type="number" id="chain_order" value="99" min="1">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('chainModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveChainMember()">新增</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit BOM Modal -->
+<div class="modal-overlay" id="bomModal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <h3 id="bomModalTitle">新增 BOM</h3>
+      <button class="modal-close" onclick="closeModal('bomModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="bom_id">
+      <div class="form-group"><label>BOM 名稱 *</label><input type="text" id="bom_name" placeholder="例：C4 標準配置"></div>
+      <div class="form-group"><label>說明</label><textarea id="bom_desc" rows="2"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('bomModal')">取消</button>
+      <button class="btn btn-primary" id="bomModalSaveBtn" onclick="saveBom()">新增</button>
+    </div>
+  </div>
+</div>
+
+<!-- BOM Detail Modal -->
+<div class="modal-overlay" id="bomDetailModal">
+  <div class="modal" style="max-width:800px">
+    <div class="modal-header">
+      <h3 id="bomDetailTitle">BOM 明細</h3>
+      <button class="modal-close" onclick="closeModal('bomDetailModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Add item row -->
+      <div style="display:flex; gap:8px; margin-bottom:16px; align-items:flex-end; flex-wrap:wrap">
+        <div style="flex:1; min-width:200px">
+          <label style="font-size:12px; color:#555; margin-bottom:4px; display:block">選擇產品</label>
+          <select id="bom_add_product" style="width:100%; padding:8px 10px; border:1px solid #DDD; border-radius:4px; font-size:13px">
+            <option value="">— 選擇產品 —</option>
+          </select>
+        </div>
+        <div style="width:80px">
+          <label style="font-size:12px; color:#555; margin-bottom:4px; display:block">數量</label>
+          <input type="number" id="bom_add_qty" value="1" min="1" style="width:100%; padding:8px; border:1px solid #DDD; border-radius:4px; font-size:13px">
+        </div>
+        <div style="width:160px">
+          <label style="font-size:12px; color:#555; margin-bottom:4px; display:block">備註</label>
+          <input type="text" id="bom_add_notes" placeholder="可選" style="width:100%; padding:8px; border:1px solid #DDD; border-radius:4px; font-size:13px">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="addBomItem()" style="white-space:nowrap">+ 加入</button>
+      </div>
+
+      <!-- Items table -->
+      <div style="overflow-x:auto">
+        <table class="data-table" id="bomItemsTable">
+          <thead>
+            <tr>
+              <th>料號</th>
+              <th>中文名稱</th>
+              <th>數量</th>
+              <th>成本</th>
+              <th>建議報價</th>
+              <th>小計（建議）</th>
+              <th>備註</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="bomItemsBody">
+            <tr><td colspan="8" class="text-muted">無品項</td></tr>
+          </tbody>
+          <tfoot id="bomItemsFoot"></tfoot>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('bomDetailModal')">關閉</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Product Modal -->
 <div class="modal-overlay" id="productModal">
   <div class="modal" style="max-width:480px">
     <div class="modal-header">
-      <h3>新增產品</h3>
+      <h3 id="productModalTitle">新增產品</h3>
       <button class="modal-close" onclick="closeModal('productModal')">✕</button>
     </div>
     <div class="modal-body">
+      <input type="hidden" id="np_id">
       <div class="form-group"><label>料號 *</label><input type="text" id="np_code" placeholder="14 0502 XXXXX"></div>
       <div class="form-group"><label>中文名稱 *</label><input type="text" id="np_name_zh"></div>
       <div class="form-group"><label>英文名稱</label><input type="text" id="np_name_en"></div>
@@ -319,10 +511,16 @@
       <div class="form-group"><label>說明</label><textarea id="np_desc" rows="2"></textarea></div>
       <div class="form-group"><label>備註（注意事項）</label><input type="text" id="np_notes"></div>
       <div class="form-group"><label>排序號</label><input type="number" id="np_sort" value="99"></div>
+      <div class="form-group">
+        <label>負責 PM</label>
+        <select id="np_pm">
+          <option value="">— 不指派 —</option>
+        </select>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('productModal')">取消</button>
-      <button class="btn btn-primary" onclick="saveProduct()">新增</button>
+      <button class="btn btn-primary" id="productModalSaveBtn" onclick="saveProduct()">新增</button>
     </div>
   </div>
 </div>

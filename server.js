@@ -7,12 +7,17 @@ const rateLimit  = require('express-rate-limit');
 const jwt        = require('jsonwebtoken');
 const path       = require('path');
 
+const { initSchema } = require('./database/schema');
+initSchema();
+
 const authRoutes    = require('./routes/auth');
 const { JWT_SECRET } = require('./routes/auth');
 const productRoutes = require('./routes/products');
 const quoteRoutes   = require('./routes/quotes');
 const adminRoutes   = require('./routes/admin');
 const importRoutes  = require('./routes/import');
+const bomRoutes      = require('./routes/bom');
+const approvalRoutes = require('./routes/approvals');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -21,14 +26,17 @@ const PORT = process.env.PORT || 3000;
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      defaultSrc:     ["'self'"],
-      scriptSrc:      ["'self'", "'unsafe-inline'"],
-      scriptSrcAttr:  ["'unsafe-inline'"],   // 允許 onclick="..." 等 HTML 屬性事件
-      styleSrc:       ["'self'", "'unsafe-inline'"],
-      imgSrc:         ["'self'", "data:"],
-      connectSrc:     ["'self'"],
+      defaultSrc:             ["'self'"],
+      scriptSrc:              ["'self'", "'unsafe-inline'"],
+      scriptSrcAttr:          ["'unsafe-inline'"],
+      styleSrc:               ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc:                ["'self'", "https://fonts.gstatic.com"],
+      imgSrc:                 ["'self'", "data:"],
+      connectSrc:             ["'self'"],
+      upgradeInsecureRequests: null,
     },
   },
+  crossOriginEmbedderPolicy: false,
 }));
 
 // ── CORS（僅允許同源，正式環境可加白名單）──────────────────
@@ -76,11 +84,13 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-app.use('/api/auth',     authRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/quotes',   quoteRoutes);
-app.use('/api/admin',    adminRoutes);
-app.use('/api/admin/import', importRoutes);
+app.use('/api/auth',          authRoutes);
+app.use('/api/products',      productRoutes);
+app.use('/api/quotes',        quoteRoutes);
+app.use('/api/admin/import',  importRoutes);
+app.use('/api/admin/boms',    bomRoutes);
+app.use('/api/approvals',    approvalRoutes);
+app.use('/api/admin',         adminRoutes);
 
 // ── SPA fallback ──────────────────────────────────────────────
 app.get('/{*path}', (req, res) => {

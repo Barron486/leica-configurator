@@ -67,12 +67,14 @@ const ROLE_LABELS = {
   finance:    '財務部',
   management: '管理部',
   gm:         '總經理',
+  pm:         'PM',
 };
 
 const STATUS_LABELS = {
   draft:       '草稿',
-  submitted:   '待審核',
+  pending_pm:  '待 PM 審核',
+  pending_gm:  '待總經理審核',
+  submitted:   '待管理部用印',
   approved:    '已核准',
   rejected:    '已退回',
-  pending_gm:  '待總經理審核',
 };

@@ -4,42 +4,115 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>登入 — Leica 產品配置選擇器</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <div class="login-page">
-    <div class="login-card">
-      <div class="login-logo">
-        <div class="brand">LEICA<span>.</span></div>
-        <div class="subtitle">產品配置選擇器 v1.0</div>
+    <div style="display:flex; flex-direction:column; align-items:center; gap:24px; width:100%">
+
+      <!-- Canvas Grid 頂部裝飾線 (Principle 16) -->
+      <div style="
+        width:100%; max-width:480px; display:flex;
+        align-items:center; gap:12px; padding:0 20px;
+      ">
+        <div style="flex:1; height:1px; background:rgba(255,255,255,0.12)"></div>
+        <!-- Principle 6: eyebrow label -->
+        <span style="
+          font-family:'SF Mono',ui-monospace,monospace;
+          font-size:9px; font-weight:700; letter-spacing:0.16em;
+          text-transform:uppercase; color:rgba(255,255,255,0.30);
+        ">LEICA · BIOSYSTEMS</span>
+        <div style="flex:1; height:1px; background:rgba(255,255,255,0.12)"></div>
       </div>
 
-      <div class="login-error" id="loginError"></div>
+      <!-- 登入卡片 -->
+      <div class="login-card">
 
-      <form id="loginForm">
-        <div class="form-group">
-          <label>帳號</label>
-          <input type="text" id="username" placeholder="請輸入帳號" autocomplete="username" required>
+        <!-- Principle 9: 左對齊 split headline -->
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:28px">
+          <div>
+            <!-- Principle 5: 大字體收緊 tracking -->
+            <div style="font-size:26px; font-weight:900; letter-spacing:-0.02em; color:#1A1A2E; line-height:1">
+              LEICA<span style="color:#E3001B">.</span>
+            </div>
+            <!-- Principle 6: eyebrow subtitle -->
+            <div class="login-logo-sub" style="
+              font-family:'SF Mono',ui-monospace,monospace;
+              font-size:9px; font-weight:700; letter-spacing:0.14em;
+              text-transform:uppercase; color:#AAA; margin-top:5px;
+            ">Product Configurator</div>
+          </div>
+          <!-- Principle 10: inline section heading — version tag 右側對齊 -->
+          <span style="
+            font-family:'SF Mono',ui-monospace,monospace;
+            font-size:9px; font-weight:600; letter-spacing:0.10em;
+            color:#CCC; background:#F4F4F6; padding:3px 8px;
+            border-radius:999px; align-self:flex-start; margin-top:4px;
+          ">v1.0</span>
         </div>
-        <div class="form-group">
-          <label>密碼</label>
-          <input type="password" id="password" placeholder="請輸入密碼" autocomplete="current-password" required>
-        </div>
-        <button type="submit" class="btn btn-primary" style="width:100%">登入</button>
-      </form>
 
-      <div class="mt-16 text-small text-muted" style="text-align:center">
-        demo: admin / sales / customer
+        <div class="login-error" id="loginError"></div>
+
+        <form id="loginForm">
+          <div class="form-group">
+            <label>帳號</label>
+            <input type="text" id="username" placeholder="請輸入帳號" autocomplete="username" required>
+          </div>
+          <div class="form-group">
+            <label>密碼</label>
+            <input type="password" id="password" placeholder="請輸入密碼" autocomplete="current-password" required>
+          </div>
+          <!-- Principle 12: pill button, 36px -->
+          <button type="submit" class="btn btn-primary" style="width:100%; height:40px; font-size:14px">登入</button>
+        </form>
+
+        <!-- Canvas Grid 分隔線 (Principle 16) -->
+        <div style="display:flex; align-items:center; gap:10px; margin:18px 0 14px">
+          <div style="flex:1; height:1px; background:rgba(26,26,46,0.08)"></div>
+          <span style="
+            font-family:'SF Mono',ui-monospace,monospace;
+            font-size:9px; letter-spacing:0.10em; color:#CCC; text-transform:uppercase;
+          ">Demo Accounts</span>
+          <div style="flex:1; height:1px; background:rgba(26,26,46,0.08)"></div>
+        </div>
+
+        <!-- Principle 14: well-styled container for demo hints -->
+        <div class="well" style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center">
+          <span style="
+            font-family:'SF Mono',ui-monospace,monospace;
+            font-size:10px; color:#888; letter-spacing:0.06em;
+          ">admin</span>
+          <span style="color:#CCC">·</span>
+          <span style="
+            font-family:'SF Mono',ui-monospace,monospace;
+            font-size:10px; color:#888; letter-spacing:0.06em;
+          ">sales</span>
+          <span style="color:#CCC">·</span>
+          <span style="
+            font-family:'SF Mono',ui-monospace,monospace;
+            font-size:10px; color:#888; letter-spacing:0.06em;
+          ">customer</span>
+        </div>
+
       </div>
+
+      <!-- 底部 brand 文字 (Principle 16 canvas grid) -->
+      <div style="
+        font-family:'SF Mono',ui-monospace,monospace;
+        font-size:9px; letter-spacing:0.16em; text-transform:uppercase;
+        color:rgba(255,255,255,0.18);
+      ">正茂生物科技 · GENMALL BIOTECH</div>
+
     </div>
   </div>
 
   <script>
-    // Redirect if already logged in
     const token = localStorage.getItem('token');
     if (token) {
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      window.location = user.role === 'admin' ? '/admin.html' : '/index.html';
+      window.location = user.role === 'admin' ? '/admin.html' : '/products.html';
     }
 
     document.getElementById('loginForm').addEventListener('submit', async e => {

@@ -4,7 +4,7 @@ const { getDb } = require('../database/schema');
 
 const router = express.Router();
 
-const REVIEWER_ROLES = ['admin', 'finance', 'management', 'gm'];
+const REVIEWER_ROLES = ['admin', 'finance', 'management', 'gm', 'pm'];
 
 function adminOnly(req, res, next) {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: '需要管理員權限' });
@@ -12,32 +12,141 @@ function adminOnly(req, res, next) {
 }
 
 function reviewerOnly(req, res, next) {
-  if (!REVIEWER_ROLES.includes(req.user?.role)) return res.status(403).json({ error: '無審核權限' });
+  const role = req.user?.role;
+  if (!REVIEWER_ROLES.includes(role)) {
+    // 也允許審批鏈成員
+    const db = require('../database/schema').getDb();
+    const inChain = db.prepare('SELECT 1 FROM approval_chain WHERE user_id=?').get(req.user?.id);
+    db.close();
+    if (!inChain) return res.status(403).json({ error: '無審核權限' });
+  }
   next();
 }
 
-// ── Products ─────────────────────────────────────────────────
-router.get('/products', adminOnly, (req, res) => {
+// ── Brands ───────────────────────────────────────────────────
+router.get('/brands', adminOnly, (req, res) => {
   const db = getDb();
-  const rows = db.prepare(`
-    SELECT pr.*, p.cost_price, p.min_sell_price, p.suggested_price, p.retail_price, p.currency, p.notes AS pricing_notes
-    FROM products pr LEFT JOIN pricing p ON p.product_id = pr.id
-    ORDER BY pr.sort_order
-  `).all();
+  const rows = db.prepare('SELECT * FROM brands ORDER BY name').all();
   db.close();
   res.json(rows);
 });
 
+router.post('/brands', adminOnly, (req, res) => {
+  const { name, description } = req.body;
+  if (!name) return res.status(400).json({ error: '品牌名稱為必填' });
+  const db = getDb();
+  try {
+    const r = db.prepare('INSERT INTO brands (name, description) VALUES (?,?)').run(name, description || '');
+    db.close();
+    res.status(201).json({ id: r.lastInsertRowid });
+  } catch(e) {
+    db.close();
+    res.status(400).json({ error: '品牌名稱已存在' });
+  }
+});
+
+router.put('/brands/:id', adminOnly, (req, res) => {
+  const { name, description, active } = req.body;
+  const db = getDb();
+  db.prepare('UPDATE brands SET name=?, description=?, active=? WHERE id=?')
+    .run(name, description || '', active ?? 1, req.params.id);
+  db.close();
+  res.json({ message: '已更新' });
+});
+
+router.delete('/brands/:id', adminOnly, (req, res) => {
+  const db = getDb();
+  db.prepare('DELETE FROM brands WHERE id=?').run(req.params.id);
+  db.close();
+  res.json({ message: '已刪除' });
+});
+
+// ── User Permissions ──────────────────────────────────────────
+router.get('/permissions', adminOnly, (req, res) => {
+  const db = getDb();
+  const users = db.prepare('SELECT id, username, display_name, role FROM users ORDER BY id').all();
+  const brands = db.prepare('SELECT * FROM brands WHERE active=1 ORDER BY name').all();
+  const result = users.map(u => {
+    const brandIds = db.prepare('SELECT brand_id FROM user_brand_permissions WHERE user_id=?').all(u.id).map(r => r.brand_id);
+    const pp = db.prepare('SELECT can_see_cost, can_see_min_price FROM user_price_permissions WHERE user_id=?').get(u.id) || { can_see_cost: 0, can_see_min_price: 0 };
+    return { ...u, brand_ids: brandIds, can_see_cost: pp.can_see_cost, can_see_min_price: pp.can_see_min_price };
+  });
+  db.close();
+  res.json({ users: result, brands });
+});
+
+router.put('/permissions/:userId', adminOnly, (req, res) => {
+  const userId = req.params.userId;
+  const { brand_ids, can_see_cost, can_see_min_price } = req.body;
+  const db = getDb();
+  const update = db.transaction(() => {
+    db.prepare('DELETE FROM user_brand_permissions WHERE user_id=?').run(userId);
+    for (const brandId of (brand_ids || [])) {
+      db.prepare('INSERT OR IGNORE INTO user_brand_permissions (user_id, brand_id) VALUES (?,?)').run(userId, brandId);
+    }
+    db.prepare('INSERT OR REPLACE INTO user_price_permissions (user_id, can_see_cost, can_see_min_price) VALUES (?,?,?)').run(userId, can_see_cost ? 1 : 0, can_see_min_price ? 1 : 0);
+  });
+  update();
+  db.close();
+  res.json({ message: '權限已更新' });
+});
+
+// ── Products ─────────────────────────────────────────────────
+router.get('/products', reviewerOnly, (req, res) => {
+  const { role, id: userId } = req.user;
+  const db = getDb();
+
+  // Brand filter (skip for admin)
+  const brandPerms = role !== 'admin'
+    ? db.prepare('SELECT brand_id FROM user_brand_permissions WHERE user_id=?').all(userId).map(r => r.brand_id)
+    : [];
+  const hasBrandFilter = brandPerms.length > 0;
+
+  const BASE_SELECT = `
+    SELECT pr.*, p.cost_price, p.min_sell_price, p.suggested_price, p.retail_price, p.currency, p.notes AS pricing_notes,
+      u.display_name AS pm_name, b.name AS brand_name
+    FROM products pr
+    LEFT JOIN pricing p ON p.product_id = pr.id
+    LEFT JOIN users u ON u.id = pr.pm_user_id
+    LEFT JOIN brands b ON b.id = pr.brand_id
+  `;
+
+  let rows;
+  if (role === 'pm') {
+    rows = db.prepare(BASE_SELECT + ' WHERE pr.pm_user_id = ? ORDER BY pr.sort_order').all(userId);
+  } else if (hasBrandFilter) {
+    const ph = brandPerms.map(() => '?').join(',');
+    rows = db.prepare(BASE_SELECT + ` WHERE pr.brand_id IN (${ph}) ORDER BY pr.sort_order`).all(...brandPerms);
+  } else {
+    rows = db.prepare(BASE_SELECT + ' ORDER BY pr.sort_order').all();
+  }
+
+  // Price field visibility
+  const pp = role === 'admin'
+    ? { can_see_cost: 1, can_see_min_price: 1 }
+    : (db.prepare('SELECT can_see_cost, can_see_min_price FROM user_price_permissions WHERE user_id=?').get(userId) || { can_see_cost: 0, can_see_min_price: 0 });
+
+  db.close();
+
+  const result = rows.map(r => {
+    const out = { ...r };
+    if (!pp.can_see_cost) delete out.cost_price;
+    if (!pp.can_see_min_price) delete out.min_sell_price;
+    return out;
+  });
+  res.json(result);
+});
+
 router.post('/products', adminOnly, (req, res) => {
-  const { catalog_number, name_zh, name_en, category, description, notes, sort_order } = req.body;
+  const { catalog_number, name_zh, name_en, category, description, notes, sort_order, pm_user_id } = req.body;
   if (!catalog_number || !name_zh || !category) {
     return res.status(400).json({ error: '料號、中文名稱、類別為必填' });
   }
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO products (catalog_number, name_zh, name_en, category, description, notes, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(catalog_number, name_zh, name_en || '', category, description || '', notes || '', sort_order || 99);
+    INSERT INTO products (catalog_number, name_zh, name_en, category, description, notes, sort_order, pm_user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(catalog_number, name_zh, name_en || '', category, description || '', notes || '', sort_order || 99, pm_user_id || null);
 
   db.prepare('INSERT INTO pricing (product_id) VALUES (?)').run(result.lastInsertRowid);
   db.close();
@@ -45,12 +154,12 @@ router.post('/products', adminOnly, (req, res) => {
 });
 
 router.put('/products/:id', adminOnly, (req, res) => {
-  const { name_zh, name_en, category, description, notes, sort_order, active } = req.body;
+  const { name_zh, name_en, category, description, notes, sort_order, active, pm_user_id } = req.body;
   const db = getDb();
   db.prepare(`
-    UPDATE products SET name_zh=?, name_en=?, category=?, description=?, notes=?, sort_order=?, active=?
+    UPDATE products SET name_zh=?, name_en=?, category=?, description=?, notes=?, sort_order=?, active=?, pm_user_id=?
     WHERE id=?
-  `).run(name_zh, name_en || '', category, description || '', notes || '', sort_order, active ?? 1, req.params.id);
+  `).run(name_zh, name_en || '', category, description || '', notes || '', sort_order, active ?? 1, pm_user_id || null, req.params.id);
   db.close();
   res.json({ message: '已更新' });
 });
