@@ -1,7 +1,16 @@
+const fs     = require('fs');
 const bcrypt = require('bcryptjs');
-const { getDb, initSchema } = require('./schema');
+const { getDb, initSchema, DB_PATH } = require('./schema');
 
 function seed() {
+  // ⚠️ 必須在 initSchema() 之前檢查，否則 initSchema 會自動建立檔案
+  const dbExisted = fs.existsSync(DB_PATH);
+  if (dbExisted) {
+    console.log(`✅ DB 既有：${DB_PATH}（Volume 正常，資料保留）`);
+  } else {
+    console.log(`⚠️  DB 不存在：${DB_PATH}（全新資料庫，若在 Railway 請確認 Volume 掛載到 /data）`);
+  }
+
   initSchema();
   const db = getDb();
 

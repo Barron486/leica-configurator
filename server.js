@@ -7,10 +7,7 @@ const rateLimit  = require('express-rate-limit');
 const jwt        = require('jsonwebtoken');
 const path       = require('path');
 
-const fs = require('fs');
-const { initSchema, DB_PATH } = require('./database/schema');
-// ⚠️ 必須在 initSchema() 之前檢查，因為 initSchema 會自動建立 DB 檔案
-const dbExistedBeforeInit = fs.existsSync(DB_PATH);
+const { initSchema } = require('./database/schema');
 initSchema();
 
 const authRoutes    = require('./routes/auth');
@@ -109,14 +106,5 @@ app.get('/{*path}', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`\n🔬 Leica 配置選擇器已啟動`);
-  console.log(`   http://localhost:${PORT}`);
-  if (dbExistedBeforeInit) {
-    console.log(`   DB: ${DB_PATH} ✅ Volume 正常，使用既有資料庫`);
-  } else {
-    console.log(`   DB: ${DB_PATH} ⚠️  DB 不存在，已新建（首次啟動或 Volume 未掛載）`);
-    if (process.env.RAILWAY_ENVIRONMENT) {
-      console.warn('   ⚠️  Railway 環境偵測到 DB 為新建，請確認 Volume 已掛載到 /data');
-    }
-  }
-  console.log('');
+  console.log(`   http://localhost:${PORT}\n`);
 });
