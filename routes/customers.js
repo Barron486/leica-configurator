@@ -3,28 +3,9 @@
 const express   = require('express');
 const multer    = require('multer');
 const XLSX      = require('xlsx');
-const Anthropic = require('@anthropic-ai/sdk');
 const { getDb } = require('../database/schema');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-
-const CUSTOMER_SYSTEM_PROMPT = `你是客戶資料分析師。
-分析 Excel 客戶資料，對應到以下資料庫欄位格式。
-
-欄位定義：
-- name（聯絡人姓名, 必填）
-- org（單位 / 醫院名稱, 選填）
-- phone（聯絡電話, 選填）
-- email（電子郵件, 選填）
-- address（地址, 選填）
-- notes（備註, 選填）
-
-回傳規則：
-1. 只輸出純 JSON 陣列，不加任何說明或 markdown
-2. 每筆必須包含 name
-3. 無法判斷的欄位直接省略
-4. 電話欄位保留原始格式`;
-
 const router = express.Router();
 
 const ADMIN_ROLES = ['admin', 'super_admin'];
@@ -33,37 +14,47 @@ function adminOnly(req, res, next) {
   return res.status(403).json({ error: '無管理客戶權限' });
 }
 
-function getApiKey() {
-  const envKey = process.env.ANTHROPIC_API_KEY;
-  if (envKey) return envKey;
-  try {
-    const db = getDb();
-    const row = db.prepare("SELECT value FROM api_settings WHERE key='anthropic_api_key'").get();
-    db.close();
-    return row?.value || '';
-  } catch { return ''; }
+// ── 欄位名稱對應表（支援中英文常見寫法）────────────────────
+const FIELD_MAP = {
+  name:    [/^(聯絡人?|姓名|name|contact|客戶名稱?)$/i],
+  org:     [/^(單位|醫院|機構|公司|組織|org|organization|hospital|institution|department)$/i],
+  phone:   [/^(電話|手機|聯絡電話|phone|mobile|tel|telephone)$/i],
+  email:   [/^(email|e-mail|電子郵件|信箱|mail)$/i],
+  address: [/^(地址|住址|address|addr)$/i],
+  notes:   [/^(備註|注意|notes?|remark|comment|說明)$/i],
+};
+
+function detectField(colName) {
+  const col = String(colName).trim();
+  for (const [field, patterns] of Object.entries(FIELD_MAP)) {
+    if (patterns.some(rx => rx.test(col))) return field;
+  }
+  return null;
+}
+
+function mapRow(row) {
+  const result = {};
+  for (const [col, val] of Object.entries(row)) {
+    const field = detectField(col);
+    if (field && !result[field]) result[field] = String(val ?? '').trim();
+  }
+  return result;
 }
 
 // ── POST /import/preview ──────────────────────────────────────
-// 放在 POST / 之前，避免 Express v5 路由歧義
 router.post('/import/preview', adminOnly, async (req, res) => {
-  // 先用 Promise 包裝 multer，確保錯誤能被捕捉
   try {
     await new Promise((resolve, reject) => {
       upload.single('file')(req, res, (err) => { if (err) reject(err); else resolve(); });
     });
   } catch (uploadErr) {
-    console.error('[customer import] multer error:', uploadErr.message);
     return res.status(400).json({ error: '檔案上傳失敗：' + uploadErr.message });
   }
 
   try {
-    console.log('[customer import] file received:', req.file?.originalname, req.file?.size);
     if (!req.file) return res.status(400).json({ error: '請上傳 Excel 檔案' });
 
-    const apiKey = getApiKey();
-    if (!apiKey) return res.status(500).json({ error: '請先在系統設定中填入 Anthropic API Key' });
-
+    // 解析 Excel
     let rows;
     try {
       const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
@@ -77,24 +68,10 @@ router.post('/import/preview', adminOnly, async (req, res) => {
     }
     if (!rows.length) return res.status(400).json({ error: 'Excel 無資料' });
 
-    const client = new Anthropic({ apiKey });
-    const userMsg = `Excel 共 ${rows.length} 筆，欄位：${Object.keys(rows[0]).join('、')}\n\n${JSON.stringify(rows, null, 2)}\n\n請直接輸出 JSON 陣列。`;
+    // 本地欄位對應（不呼叫 AI）
+    const customers = rows.map(mapRow);
 
-    let customers;
-    try {
-      const msg = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4000,
-        system: CUSTOMER_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userMsg }],
-      });
-      const text = msg.content[0].text.replace(/^```[\w]*\n?/gm, '').replace(/```\s*$/gm, '').trim();
-      const match = text.match(/\[[\s\S]+\]/);
-      customers = JSON.parse(match ? match[0] : text);
-    } catch (e) {
-      return res.status(500).json({ error: 'Claude 分析失敗：' + e.message });
-    }
-
+    // 查詢已存在的 email
     const db = getDb();
     const existingEmails = new Set(
       db.prepare("SELECT email FROM customers WHERE email != ''").all().map(r => r.email)
@@ -120,7 +97,7 @@ router.post('/import/preview', adminOnly, async (req, res) => {
       customers: result,
     });
   } catch (e) {
-    console.error('customer import preview error:', e);
+    console.error('[customer import]', e.message);
     res.status(500).json({ error: '伺服器錯誤：' + e.message });
   }
 });
@@ -155,7 +132,7 @@ router.post('/import/confirm', adminOnly, (req, res) => {
 
     res.json({ message: '匯入完成', inserted, skipped });
   } catch (e) {
-    console.error('customer import confirm error:', e);
+    console.error('[customer import confirm]', e.message);
     res.status(500).json({ error: '伺服器錯誤：' + e.message });
   }
 });
@@ -164,65 +141,85 @@ router.post('/import/confirm', adminOnly, (req, res) => {
 router.get('/search', (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q) return res.json([]);
-  const db = getDb();
-  const like = `%${q}%`;
-  const rows = db.prepare(`
-    SELECT id, name, org, phone, email, address, notes
-    FROM customers
-    WHERE name LIKE ? OR org LIKE ? OR phone LIKE ? OR email LIKE ?
-    ORDER BY org, name
-    LIMIT 20
-  `).all(like, like, like, like);
-  db.close();
-  res.json(rows);
+  try {
+    const db = getDb();
+    const like = `%${q}%`;
+    const rows = db.prepare(`
+      SELECT id, name, org, phone, email, address, notes
+      FROM customers
+      WHERE name LIKE ? OR org LIKE ? OR phone LIKE ? OR email LIKE ?
+      ORDER BY org, name
+      LIMIT 20
+    `).all(like, like, like, like);
+    db.close();
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── GET / ──────────────────────────────────────────────────────
 router.get('/', adminOnly, (req, res) => {
-  const db = getDb();
-  const rows = db.prepare(`
-    SELECT id, name, org, phone, email, address, notes, created_at, updated_at
-    FROM customers ORDER BY org, name
-  `).all();
-  db.close();
-  res.json(rows);
+  try {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT id, name, org, phone, email, address, notes, created_at, updated_at
+      FROM customers ORDER BY org, name
+    `).all();
+    db.close();
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── POST / ────────────────────────────────────────────────────
 router.post('/', adminOnly, (req, res) => {
-  const { name, org, phone, email, address, notes } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: '請填寫客戶姓名' });
-  const db = getDb();
-  const r = db.prepare(`
-    INSERT INTO customers (name, org, phone, email, address, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(name.trim(), org||'', phone||'', email||'', address||'', notes||'');
-  const row = db.prepare('SELECT * FROM customers WHERE id=?').get(r.lastInsertRowid);
-  db.close();
-  res.json(row);
+  try {
+    const { name, org, phone, email, address, notes } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: '請填寫客戶姓名' });
+    const db = getDb();
+    const r = db.prepare(`
+      INSERT INTO customers (name, org, phone, email, address, notes)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(name.trim(), org||'', phone||'', email||'', address||'', notes||'');
+    const row = db.prepare('SELECT * FROM customers WHERE id=?').get(r.lastInsertRowid);
+    db.close();
+    res.json(row);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── PUT /:id ──────────────────────────────────────────────────
 router.put('/:id', adminOnly, (req, res) => {
-  const { name, org, phone, email, address, notes } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: '請填寫客戶姓名' });
-  const db = getDb();
-  db.prepare(`
-    UPDATE customers SET name=?, org=?, phone=?, email=?, address=?, notes=?,
-    updated_at=CURRENT_TIMESTAMP WHERE id=?
-  `).run(name.trim(), org||'', phone||'', email||'', address||'', notes||'', req.params.id);
-  const row = db.prepare('SELECT * FROM customers WHERE id=?').get(req.params.id);
-  db.close();
-  if (!row) return res.status(404).json({ error: '找不到客戶' });
-  res.json(row);
+  try {
+    const { name, org, phone, email, address, notes } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: '請填寫客戶姓名' });
+    const db = getDb();
+    db.prepare(`
+      UPDATE customers SET name=?, org=?, phone=?, email=?, address=?, notes=?,
+      updated_at=CURRENT_TIMESTAMP WHERE id=?
+    `).run(name.trim(), org||'', phone||'', email||'', address||'', notes||'', req.params.id);
+    const row = db.prepare('SELECT * FROM customers WHERE id=?').get(req.params.id);
+    db.close();
+    if (!row) return res.status(404).json({ error: '找不到客戶' });
+    res.json(row);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── DELETE /:id ───────────────────────────────────────────────
 router.delete('/:id', adminOnly, (req, res) => {
-  const db = getDb();
-  db.prepare('DELETE FROM customers WHERE id=?').run(req.params.id);
-  db.close();
-  res.json({ ok: true });
+  try {
+    const db = getDb();
+    db.prepare('DELETE FROM customers WHERE id=?').run(req.params.id);
+    db.close();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 module.exports = router;
