@@ -56,7 +56,7 @@ const CATEGORY_LABELS = {
   blade_holder: '刀架 / 刀片架',
   blade:        '刀片（耗材）',
   cooling:      '冷卻系統',
-  lighting:     '照明與觀察裝置',
+  lighting:     '照明與觀察',
   accessory:    '其他配件',
 };
 

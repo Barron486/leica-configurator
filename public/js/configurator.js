@@ -188,19 +188,7 @@ function _refreshInvoiceTotal() {
   renderSummary();
 })();
 
-// ── Category labels ───────────────────────────────────────────
-const CATEGORY_LABELS = {
-  base:         '基礎配置',
-  orientation:  '檢體夾具固定裝置',
-  clamping:     '快速夾緊系統',
-  holder:       '檢體夾具',
-  blade_base:   '刀架底座',
-  blade_holder: '刀架 / 刀片架',
-  blade:        '刀片（耗材）',
-  cooling:      '冷卻系統',
-  lighting:     '照明與觀察',
-  accessory:    '其他配件',
-};
+// CATEGORY_LABELS is defined in auth.js (shared)
 
 // ── Render product list（購物車目錄模式）────────────────────────
 function renderProducts() {
