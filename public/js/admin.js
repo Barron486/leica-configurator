@@ -43,6 +43,7 @@ const TAB_PERM_MAP = {
   bom:       'manage_bom',
   approvals: 'manage_approval',
   import:    'import_products',
+  'pm-import': 'manage_pricing',
   // roleperms / catalog → admin/super_admin only，不在此表
 };
 
@@ -64,7 +65,7 @@ async function applyRolePermTabs(user) {
   const rp = (res && res.ok) ? await res.json() : {};
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
-    const tab = btn.getAttribute('onclick')?.match(/switchTab\('(\w+)'\)/)?.[1];
+    const tab = btn.getAttribute('onclick')?.match(/switchTab\('([\w-]+)'\)/)?.[1];
     if (!tab) return;
 
     // roleperms / catalog 非 admin 不顯示
@@ -1550,4 +1551,166 @@ async function removeDependency(depId) {
   if (!res || !res.ok) { showToast('移除失敗', 'error'); return; }
   showToast('已移除', 'success');
   await renderDeps();
+}
+
+// ── PM 批次維護 ───────────────────────────────────────────────
+
+let _pmPreviewData = null;
+
+function downloadPmTemplate() {
+  const token = localStorage.getItem('leica_token');
+  const a = document.createElement('a');
+  a.href = '/api/admin/pm-import/template';
+  // 帶 token：用臨時 fetch 下載
+  fetch('/api/admin/pm-import/template', {
+    headers: { Authorization: 'Bearer ' + token },
+  })
+    .then(r => r.blob())
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'pm-product-price-template.xlsx';
+      link.click();
+      URL.revokeObjectURL(url);
+    })
+    .catch(() => showToast('下載失敗', 'error'));
+}
+
+function handlePmDrop(event) {
+  event.preventDefault();
+  document.getElementById('pmDropZone').style.borderColor = '#CCC';
+  const file = event.dataTransfer.files[0];
+  if (file) uploadPmFile(file);
+}
+
+function handlePmFileSelect(input) {
+  const file = input.files[0];
+  if (file) uploadPmFile(file);
+}
+
+async function uploadPmFile(file) {
+  document.getElementById('pmUploadProgress').style.display = 'block';
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  const res = await apiFetch('/api/admin/pm-import/preview', { method: 'POST', body: fd });
+  document.getElementById('pmUploadProgress').style.display = 'none';
+
+  if (!res || !res.ok) {
+    const err = res ? await res.json() : {};
+    showToast(err.error || '上傳失敗', 'error');
+    return;
+  }
+
+  _pmPreviewData = await res.json();
+  renderPmPreview(_pmPreviewData);
+  document.getElementById('pmStep1').style.display = 'none';
+  document.getElementById('pmStep2').style.display = 'block';
+  document.getElementById('pmStep3').style.display = 'none';
+}
+
+function renderPmPreview(data) {
+  const STATUS_MAP = {
+    new:    '<span class="import-badge import-new">新增</span>',
+    update: '<span class="import-badge import-update">更新</span>',
+    error:  '<span class="import-badge import-error">錯誤</span>',
+  };
+
+  // Products
+  const prodBody = document.getElementById('pmProdBody');
+  const prods = data.products?.rows ?? [];
+  if (prods.length === 0) {
+    prodBody.innerHTML = '<tr><td colspan="9" class="text-muted">工作表一無資料</td></tr>';
+  } else {
+    prodBody.innerHTML = prods.map(p => {
+      const statusHtml = STATUS_MAP[p._status] || p._status;
+      const errs = (p._errors || []).join('、');
+      return `<tr style="${p._status === 'error' ? 'background:#FFF5F5' : ''}">
+        <td>${statusHtml}</td>
+        <td>${esc(p.catalog_number)}</td>
+        <td>${esc(p.name_zh)}</td>
+        <td>${esc(p._category_label || p.category)}</td>
+        <td>${p.cost_price != null ? p.cost_price.toLocaleString() : '—'}</td>
+        <td>${p.min_sell_price != null ? p.min_sell_price.toLocaleString() : '—'}</td>
+        <td>${p.suggested_price != null ? p.suggested_price.toLocaleString() : '—'}</td>
+        <td>${p.retail_price != null ? p.retail_price.toLocaleString() : '—'}</td>
+        <td class="text-muted text-small">${esc(errs)}</td>
+      </tr>`;
+    }).join('');
+  }
+  const ps = data.products;
+  document.getElementById('pmProdSummary').textContent =
+    `共 ${ps.total} 筆：新增 ${ps.new_count}、更新 ${ps.update_count}、錯誤 ${ps.error_count}`;
+
+  // Prices
+  const priceBody = document.getElementById('pmPriceBody');
+  const prices = data.prices?.rows ?? [];
+  if (prices.length === 0) {
+    priceBody.innerHTML = '<tr><td colspan="8" class="text-muted">工作表二無資料</td></tr>';
+  } else {
+    priceBody.innerHTML = prices.map(p => {
+      const statusHtml = STATUS_MAP[p._status] || p._status;
+      const errs = (p._errors || []).join('、');
+      const fmt = v => v != null ? v.toLocaleString() : '—';
+      return `<tr style="${p._status === 'error' ? 'background:#FFF5F5' : ''}">
+        <td>${statusHtml}</td>
+        <td>${esc(p.catalog_number)}</td>
+        <td>${esc(p._existing_name)}</td>
+        <td>${fmt(p.cost_price)}</td>
+        <td>${fmt(p.min_sell_price)}</td>
+        <td>${fmt(p.suggested_price)}</td>
+        <td>${fmt(p.retail_price)}</td>
+        <td class="text-muted text-small">${esc(errs)}</td>
+      </tr>`;
+    }).join('');
+  }
+  const pr = data.prices;
+  document.getElementById('pmPriceSummary').textContent =
+    `共 ${pr.total} 筆：更新 ${pr.update_count}、錯誤 ${pr.error_count}`;
+
+  // Disable confirm if no valid rows
+  const hasValid = (ps.new_count + ps.update_count + pr.update_count) > 0;
+  document.getElementById('pmConfirmBtn').disabled = !hasValid;
+}
+
+async function confirmPmImport() {
+  if (!_pmPreviewData) return;
+  document.getElementById('pmConfirmBtn').disabled = true;
+
+  const body = {
+    products: (_pmPreviewData.products?.rows ?? []).filter(p => p._status !== 'error'),
+    prices:   (_pmPreviewData.prices?.rows   ?? []).filter(p => p._status !== 'error'),
+  };
+
+  const res = await apiFetch('/api/admin/pm-import/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res || !res.ok) {
+    const err = res ? await res.json() : {};
+    showToast(err.error || '匯入失敗', 'error');
+    document.getElementById('pmConfirmBtn').disabled = false;
+    return;
+  }
+
+  const result = await res.json();
+  document.getElementById('pmStep2').style.display = 'none';
+  document.getElementById('pmStep3').style.display = 'block';
+  document.getElementById('pmResultMsg').textContent = '匯入成功！';
+  document.getElementById('pmResultDetail').textContent =
+    `新增產品 ${result.products_inserted} 筆、更新產品 ${result.products_updated} 筆、更新定價 ${result.prices_updated} 筆`;
+  _pmPreviewData = null;
+}
+
+function resetPmImport() {
+  _pmPreviewData = null;
+  document.getElementById('pmFileInput').value = '';
+  document.getElementById('pmStep1').style.display = 'block';
+  document.getElementById('pmStep2').style.display = 'none';
+  document.getElementById('pmStep3').style.display = 'none';
+  document.getElementById('pmUploadProgress').style.display = 'none';
 }

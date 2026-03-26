@@ -109,6 +109,7 @@
     <button class="tab-btn" onclick="switchTab('bom')">📋 BOM 管理</button>
     <button class="tab-btn" id="tab-btn-approvals" onclick="switchTab('approvals')">🔐 審批人員</button>
     <button class="tab-btn" id="tab-btn-import" onclick="switchTab('import')">📥 匯入產品</button>
+    <button class="tab-btn" id="tab-btn-pm-import" onclick="switchTab('pm-import')">📤 PM 批次維護</button>
     <button class="tab-btn" onclick="switchTab('catalog')">🗂️ 目錄管理</button>
     <button class="tab-btn" id="tab-btn-customers" onclick="switchTab('customers')">👥 客戶管理</button>
     <button class="tab-btn" id="tab-btn-settings" style="display:none" onclick="switchTab('settings')">⚙️ 系統設定</button>
@@ -367,6 +368,109 @@
       <h3 id="importResultMsg" style="margin:12px 0 8px; color:#2E7D32"></h3>
       <p class="text-muted" id="importResultDetail"></p>
       <button class="btn btn-primary" style="margin-top:16px" onclick="resetImport()">繼續匯入</button>
+    </div>
+  </div>
+
+  <!-- Tab: PM Batch Import -->
+  <div id="tab-pm-import" class="tab-panel">
+    <div class="flex-between" style="margin-bottom:16px">
+      <div>
+        <strong>📤 PM 批次維護 — 產品新增 &amp; 價格更新</strong>
+        <span class="text-muted text-small" style="margin-left:10px">同一份 Excel，一次上傳完成</span>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="downloadPmTemplate()">⬇ 下載 Excel 範本</button>
+    </div>
+
+    <!-- Step 1: Upload -->
+    <div id="pmStep1">
+      <div class="card" style="margin-bottom:16px; background:#F8F9FA; border:1px solid #E9ECEF">
+        <p style="margin:0; font-size:13px; color:#555; line-height:1.8">
+          <strong>使用說明：</strong><br>
+          ① 下載右上角 Excel 範本<br>
+          ② <strong>工作表一「新增產品」</strong>：填寫要新增或更新的產品資料（含定價）<br>
+          ③ <strong>工作表二「價格維護」</strong>：僅填料號與要調整的價格欄（空白欄不會被覆蓋）<br>
+          ④ 上傳後預覽確認，再按「確認匯入」
+        </p>
+      </div>
+
+      <div class="card">
+        <h4 style="margin:0 0 14px">選擇 Excel 檔案</h4>
+        <div id="pmDropZone" style="
+          border:2px dashed #CCC; border-radius:8px; padding:40px;
+          text-align:center; cursor:pointer; transition:border-color 0.2s;
+        " onclick="document.getElementById('pmFileInput').click()"
+           ondragover="event.preventDefault(); this.style.borderColor='#005FAE'"
+           ondragleave="this.style.borderColor='#CCC'"
+           ondrop="handlePmDrop(event)">
+          <div style="font-size:2.5rem">📊</div>
+          <div style="margin-top:8px; color:#555">點擊或拖曳 Excel 檔案到此處</div>
+          <div class="text-muted text-small" style="margin-top:4px">.xlsx / .xls，最大 10MB</div>
+        </div>
+        <input type="file" id="pmFileInput" accept=".xlsx,.xls" style="display:none" onchange="handlePmFileSelect(this)">
+
+        <div id="pmUploadProgress" style="display:none; margin-top:16px">
+          <div style="display:flex; align-items:center; gap:10px; color:#005FAE">
+            <div class="spinner" style="width:20px; height:20px; border-width:2px"></div>
+            <span>解析中，請稍候…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Preview -->
+    <div id="pmStep2" style="display:none">
+      <!-- Products preview -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="flex-between" style="margin-bottom:10px">
+          <h4 style="margin:0">工作表一：新增 / 更新產品</h4>
+          <span id="pmProdSummary" class="text-muted text-small"></span>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table" id="pmProdTable">
+            <thead>
+              <tr>
+                <th>狀態</th><th>料號</th><th>中文名稱</th><th>類別</th>
+                <th>成本</th><th>最低售價</th><th>建議報價</th><th>零售價</th><th>問題</th>
+              </tr>
+            </thead>
+            <tbody id="pmProdBody"><tr><td colspan="9" class="text-muted">無資料</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Prices preview -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="flex-between" style="margin-bottom:10px">
+          <h4 style="margin:0">工作表二：價格維護</h4>
+          <span id="pmPriceSummary" class="text-muted text-small"></span>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table" id="pmPriceTable">
+            <thead>
+              <tr>
+                <th>狀態</th><th>料號</th><th>現有品名</th>
+                <th>成本</th><th>最低售價</th><th>建議報價</th><th>零售價</th><th>問題</th>
+              </tr>
+            </thead>
+            <tbody id="pmPriceBody"><tr><td colspan="8" class="text-muted">無資料</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:8px">
+        <button class="btn btn-outline" onclick="resetPmImport()">← 重新上傳</button>
+        <button class="btn btn-primary" id="pmConfirmBtn" onclick="confirmPmImport()">✅ 確認匯入</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Done -->
+    <div id="pmStep3" style="display:none">
+      <div class="card" style="text-align:center; padding:40px">
+        <div style="font-size:3rem">✅</div>
+        <h3 id="pmResultMsg" style="margin:12px 0 8px; color:#2E7D32"></h3>
+        <p class="text-muted" id="pmResultDetail"></p>
+        <button class="btn btn-primary" style="margin-top:16px" onclick="resetPmImport()">繼續上傳</button>
+      </div>
     </div>
   </div>
 

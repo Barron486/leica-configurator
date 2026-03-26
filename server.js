@@ -16,6 +16,7 @@ const productRoutes = require('./routes/products');
 const quoteRoutes   = require('./routes/quotes');
 const adminRoutes   = require('./routes/admin');
 const importRoutes  = require('./routes/import');
+const pmImportRoutes = require('./routes/pm-import');
 const bomRoutes      = require('./routes/bom');
 const approvalRoutes = require('./routes/approvals');
 const catalogRoutes  = require('./routes/catalog');
@@ -93,7 +94,8 @@ app.use('/api', (req, res, next) => {
 app.use('/api/auth',          authRoutes);
 app.use('/api/products',      productRoutes);
 app.use('/api/quotes',        quoteRoutes);
-app.use('/api/admin/import',  importRoutes);
+app.use('/api/admin/import',    importRoutes);
+app.use('/api/admin/pm-import', pmImportRoutes);
 app.use('/api/admin/boms',    bomRoutes);
 app.use('/api/admin/catalog', catalogRoutes);
 app.use('/api/approvals',    approvalRoutes);
