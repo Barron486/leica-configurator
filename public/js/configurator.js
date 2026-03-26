@@ -7,16 +7,16 @@ function escHtml(str) {
 // ── State ─────────────────────────────────────────────────────
 let user = null;
 let products = [];
-let selected     = new Map(); // id → quantity
 let customPrices = new Map(); // id → manually entered price
 let baseProduct  = null;
 let _lastQuoteNumber = '';
 let _editingQuoteId  = null; // 編輯草稿時的報價單 ID
-let extraSelected    = new Map(); // product_id → quantity (sales-added from DB)
+let extraSelected    = new Map(); // product_id → quantity (購物車)
 let customItems      = [];         // [{id, name, catalogNumber, cost, price, quantity}]
 let _nextCid         = 1;
-let requiredBomItems = new Set();  // product_id → 強制選配（不可刪除）
 let autoDeps         = new Map();  // product_id → quantity（依賴自動帶入）
+let _cartSearch      = '';
+let _cartCatFilter   = '';
 
 // ── Price helpers ─────────────────────────────────────────────
 function getPriceKey() {
@@ -56,14 +56,11 @@ function updateInvoicePrice(id, qty, inputEl) {
 
 function _refreshInvoiceTotal() {
   const allDbItems = [
-    ...products.filter(p => selected.has(p.id)),
     ...products.filter(p => extraSelected.has(p.id)),
     ...products.filter(p => autoDeps.has(p.id)),
   ];
-  const dbTotal     = allDbItems.reduce((s, p) => {
-    const qty = selected.has(p.id) ? selected.get(p.id)
-              : extraSelected.has(p.id) ? extraSelected.get(p.id)
-              : autoDeps.get(p.id);
+  const dbTotal = allDbItems.reduce((s, p) => {
+    const qty = extraSelected.has(p.id) ? extraSelected.get(p.id) : autoDeps.get(p.id);
     return s + getEffectivePrice(p) * (qty || 1);
   }, 0);
   const customTotal = customItems.reduce((s, ci) => s + ci.price * ci.quantity, 0);
@@ -172,98 +169,108 @@ function _refreshInvoiceTotal() {
     return;
   }
 
-  // ── 從 BOM 新建報價模式 ───────────────────────────────────
-  if (!bomId) {
-    document.getElementById('productList').innerHTML = `
-      <div style="text-align:center;padding:40px 20px;color:#888">
-        <div style="font-size:32px;margin-bottom:12px">📦</div>
-        <div style="font-weight:600;font-size:15px;color:#333;margin-bottom:8px">請先選擇產品</div>
-        <div style="font-size:13px;margin-bottom:20px">請從產品目錄選擇要配置的儀器，再進行報價配置。</div>
-        <a href="/products.html" class="btn btn-red" style="display:inline-block;text-decoration:none">前往產品目錄</a>
-      </div>`;
-    return;
+  // ── 從 BOM 載入模式 ───────────────────────────────────────
+  if (bomId) {
+    const bomRes = await apiFetch(`/api/admin/boms/${bomId}/config`);
+    if (bomRes && bomRes.ok) {
+      const { bom, items } = await bomRes.json();
+      items.forEach(item => {
+        extraSelected.set(item.product_id, item.quantity);
+      });
+      const titleEl = document.querySelector('.main-topbar-title');
+      if (titleEl && bom.name) titleEl.textContent = bom.name;
+    }
   }
 
-  const bomRes = await apiFetch(`/api/admin/boms/${bomId}/config`);
-  if (bomRes && bomRes.ok) {
-    const { bom, items } = await bomRes.json();
-    items.forEach(item => {
-      selected.set(item.product_id, item.quantity);
-      if (item.required !== 0) requiredBomItems.add(item.product_id);
-    });
-    const titleEl = document.querySelector('.main-topbar-title');
-    if (titleEl && bom.name) titleEl.textContent = bom.name;
-  }
-
+  // ── 一般模式（含無 bom param）：顯示所有產品目錄 ──────────
   computeAutoDeps();
   renderProducts();
   renderSummary();
 })();
 
-// ── Render product list ───────────────────────────────────────
-// BOM 品項（固定）+ 額外產品（可移除）+ 自訂品項（可移除）+ 新增面板
+// ── Category labels ───────────────────────────────────────────
+const CATEGORY_LABELS = {
+  base:         '基礎配置',
+  orientation:  '檢體夾具固定裝置',
+  clamping:     '快速夾緊系統',
+  holder:       '檢體夾具',
+  blade_base:   '刀架底座',
+  blade_holder: '刀架 / 刀片架',
+  blade:        '刀片（耗材）',
+  cooling:      '冷卻系統',
+  lighting:     '照明與觀察',
+  accessory:    '其他配件',
+};
+
+// ── Render product list（購物車目錄模式）────────────────────────
 function renderProducts() {
   computeAutoDeps();
   const container = document.getElementById('productList');
 
-  const bomItems   = products.filter(p => selected.has(p.id));
-  const extraItems = products.filter(p => extraSelected.has(p.id));
-
-  if (bomItems.length === 0) {
-    container.innerHTML = `
-      <div style="text-align:center;padding:40px;color:#888">BOM 無品項</div>
-      ${renderAddPanel()}`;
-    return;
-  }
-
   const categoryOrder = ['base','orientation','clamping','holder','blade_base','blade_holder','blade','cooling','lighting','accessory'];
-  let html = '';
 
-  // ── Section 1: BOM items (fixed) ─────────────────────────────
-  // group by category
-  const bomGrouped = {};
-  bomItems.forEach(p => { if (!bomGrouped[p.category]) bomGrouped[p.category] = []; bomGrouped[p.category].push(p); });
-  for (const cat of categoryOrder) {
-    const items = bomGrouped[cat]; if (!items) continue;
-    items.sort((a,b) => a.sort_order - b.sort_order);
-    html += `<div class="category-section"><div class="category-title">${CATEGORY_LABELS[cat]||cat}</div>`;
-    for (const p of items) {
-      const isIncluded = p.is_included_in_base;
-      const isRequired = requiredBomItems.has(p.id);
-      const qty = selected.get(p.id) || 1;
-      const checkboxHtml = isRequired
-        ? `<input type="checkbox" checked disabled title="強制選配，無法移除">`
-        : `<input type="checkbox" checked onclick="event.stopPropagation(); removeBomItem(${p.id})" title="取消勾選可移除">`;
-      html += `<div class="product-item selected">
-        ${checkboxHtml}
-        <div class="product-info">
-          <div class="product-name">${p.name_zh}${isIncluded ? ' <span style="color:#28A745;font-size:11px">✓ 含於配置</span>' : ''}${isRequired ? '' : ' <span style="color:#888;font-size:10px">（可選）</span>'}</div>
-          <div class="product-code">${p.catalog_number}</div>
-          ${p.description ? `<div class="product-desc">${p.description}</div>` : ''}
-          ${p.notes ? `<div class="product-note">⚠ ${p.notes}</div>` : ''}
-        </div>
-        <div class="product-price">
-          ${renderPriceColumn(p)}
-          <div class="qty-stepper" onclick="event.stopPropagation()">
-            <button class="qty-btn" onclick="changeQty(${p.id}, -1)">−</button>
-            <span class="qty-val">${qty}</span>
-            <button class="qty-btn" onclick="changeQty(${p.id}, 1)">+</button>
-          </div>
-        </div>
-      </div>`;
+  // 搜尋 / 類別過濾
+  const search = _cartSearch.trim().toLowerCase();
+  const catFilter = _cartCatFilter;
+
+  let filteredProducts = products.filter(p => {
+    if (catFilter && p.category !== catFilter) return false;
+    if (search) {
+      const haystack = [p.name_zh, p.catalog_number, p.name_en].filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(search)) return false;
     }
-    html += `</div>`;
-  }
+    return true;
+  });
 
-  // ── Section 1.5: Auto-dependency items ───────────────────────
-  if (autoDeps.size > 0) {
-    const depProducts = products.filter(p => autoDeps.has(p.id));
-    if (depProducts.length > 0) {
-      html += `<div class="category-section"><div class="category-title" style="display:flex;justify-content:space-between;align-items:center"><span>自動帶入品項</span><span style="font-size:10px;font-weight:400;color:#888">依產品關聯自動帶入，不可單獨移除</span></div>`;
-      for (const p of depProducts) {
+  // 頂部：搜尋列 + 類別過濾
+  const catOptions = categoryOrder.map(c =>
+    `<option value="${c}" ${catFilter === c ? 'selected' : ''}>${CATEGORY_LABELS[c] || c}</option>`
+  ).join('');
+
+  let html = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <input
+        id="cartSearch"
+        type="text"
+        placeholder="搜尋品名、料號…"
+        value="${escHtml(_cartSearch)}"
+        oninput="_cartSearch=this.value; renderProducts()"
+        style="flex:1;min-width:160px;padding:7px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px"
+      >
+      <select
+        id="catFilter"
+        onchange="_cartCatFilter=this.value; renderProducts()"
+        style="padding:7px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px;background:#FFF"
+      >
+        <option value="" ${!catFilter ? 'selected' : ''}>全部類別</option>
+        ${catOptions}
+      </select>
+    </div>`;
+
+  // 依 categoryOrder 分組顯示
+  const grouped = {};
+  filteredProducts.forEach(p => {
+    if (!grouped[p.category]) grouped[p.category] = [];
+    grouped[p.category].push(p);
+  });
+
+  let anyProduct = false;
+  for (const cat of categoryOrder) {
+    const items = grouped[cat];
+    if (!items || items.length === 0) continue;
+    anyProduct = true;
+    items.sort((a, b) => a.sort_order - b.sort_order);
+
+    html += `<div class="category-section"><div class="category-title">${CATEGORY_LABELS[cat] || cat}</div>`;
+
+    for (const p of items) {
+      const inCart   = extraSelected.has(p.id);
+      const isAutoDep = autoDeps.has(p.id) && !inCart;
+
+      if (isAutoDep) {
+        // 自動帶入品項
         const qty = autoDeps.get(p.id);
         html += `<div class="product-item selected" style="opacity:0.85;background:#F0F4FF">
-          <input type="checkbox" checked disabled title="依賴品項，自動帶入">
           <div class="product-info">
             <div class="product-name">${escHtml(p.name_zh)} <span style="color:#5B8DEF;font-size:10px;font-weight:600">⬡ 自動帶入</span></div>
             <div class="product-code">${escHtml(p.catalog_number)}</div>
@@ -278,45 +285,56 @@ function renderProducts() {
             </div>
           </div>
         </div>`;
-      }
-      html += `</div>`;
-    }
-  }
-
-  // ── Section 2: Extra items from DB (removable) ────────────────
-  if (extraItems.length > 0) {
-    html += `<div class="category-section"><div class="category-title" style="display:flex;justify-content:space-between;align-items:center"><span>額外新增品項</span><span style="font-size:10px;font-weight:400;color:#AAA">取消勾選可移除</span></div>`;
-    for (const p of extraItems) {
-      const qty = extraSelected.get(p.id) || 1;
-      html += `<div class="product-item selected">
-        <input type="checkbox" checked onclick="event.stopPropagation(); removeExtraProduct(${p.id})">
-        <div class="product-info">
-          <div class="product-name">${p.name_zh}</div>
-          <div class="product-code">${p.catalog_number}</div>
-          ${p.description ? `<div class="product-desc">${p.description}</div>` : ''}
-        </div>
-        <div class="product-price">
-          ${renderPriceColumn(p)}
-          <div class="qty-stepper" onclick="event.stopPropagation()">
-            <button class="qty-btn" onclick="changeExtraQty(${p.id}, -1)">−</button>
-            <span class="qty-val">${qty}</span>
-            <button class="qty-btn" onclick="changeExtraQty(${p.id}, 1)">+</button>
+      } else if (inCart) {
+        // 已在購物車
+        const qty = extraSelected.get(p.id) || 1;
+        html += `<div class="product-item selected">
+          <div class="product-info">
+            <div class="product-name">${escHtml(p.name_zh)}</div>
+            <div class="product-code">${escHtml(p.catalog_number)}</div>
           </div>
-        </div>
-      </div>`;
+          <div class="product-price">
+            ${renderPriceColumn(p)}
+            <div class="qty-stepper" onclick="event.stopPropagation()">
+              <button class="qty-btn" onclick="changeCartQty(${p.id}, -1)">−</button>
+              <span class="qty-val">${qty}</span>
+              <button class="qty-btn" onclick="changeCartQty(${p.id}, 1)">+</button>
+            </div>
+            <button class="btn btn-outline btn-sm" style="margin-top:6px;color:#DC3545;border-color:#DC3545;font-size:11px" onclick="removeFromCart(${p.id})">移除</button>
+          </div>
+        </div>`;
+      } else {
+        // 未加入購物車
+        html += `<div class="product-item">
+          <div class="product-info">
+            <div class="product-name">${escHtml(p.name_zh)}</div>
+            <div class="product-code">${escHtml(p.catalog_number)}</div>
+            ${p.description ? `<div class="product-desc">${escHtml(p.description)}</div>` : ''}
+            ${p.notes ? `<div class="product-note">⚠ ${escHtml(p.notes)}</div>` : ''}
+          </div>
+          <div class="product-price">
+            ${renderPriceColumn(p)}
+            <button class="btn btn-outline btn-sm" style="margin-top:6px;white-space:nowrap" onclick="addToCart(${p.id})">＋ 加入購物車</button>
+          </div>
+        </div>`;
+      }
     }
+
     html += `</div>`;
   }
 
-  // ── Section 3: Custom items (removable) ───────────────────────
+  if (!anyProduct) {
+    html += `<div style="text-align:center;padding:40px;color:#AAA;font-size:13px">找不到符合條件的產品</div>`;
+  }
+
+  // 自訂品項 section
   if (customItems.length > 0) {
-    html += `<div class="category-section"><div class="category-title" style="display:flex;justify-content:space-between;align-items:center"><span>自訂品項</span><span style="font-size:10px;font-weight:400;color:#AAA">取消勾選可移除</span></div>`;
+    html += `<div class="category-section"><div class="category-title" style="display:flex;justify-content:space-between;align-items:center"><span>自訂品項</span><span style="font-size:10px;font-weight:400;color:#AAA">可移除</span></div>`;
     for (const ci of customItems) {
       html += `<div class="product-item selected">
-        <input type="checkbox" checked onclick="event.stopPropagation(); removeCustomItem(${ci.id})">
         <div class="product-info">
-          <div class="product-name">${ci.name}</div>
-          <div class="product-code">${ci.catalogNumber || '—'}</div>
+          <div class="product-name">${escHtml(ci.name)}</div>
+          <div class="product-code">${escHtml(ci.catalogNumber || '—')}</div>
         </div>
         <div class="product-price">
           ${user.role !== 'customer' && user.role !== 'demo' && ci.cost > 0 ? `<div class="price-cost">成本 ${formatPrice(ci.cost)}</div>` : ''}
@@ -326,52 +344,33 @@ function renderProducts() {
             <span class="qty-val">${ci.quantity}</span>
             <button class="qty-btn" onclick="changeCustomQty(${ci.id}, 1)">+</button>
           </div>
+          <button class="btn btn-outline btn-sm" style="margin-top:6px;color:#DC3545;border-color:#DC3545;font-size:11px" onclick="removeCustomItem(${ci.id})">移除</button>
         </div>
       </div>`;
     }
     html += `</div>`;
   }
 
-  // ── Section 4: Add panel ──────────────────────────────────────
-  html += renderAddPanel();
+  // 手動新增自訂品項表單（一直顯示）
+  html += _renderCustomItemForm();
 
   container.innerHTML = html;
 }
 
-function renderAddPanel() {
+function _renderCustomItemForm() {
   const canSeeCost = user.role !== 'customer' && user.role !== 'demo';
-  const availableProducts = products.filter(p => !selected.has(p.id) && !extraSelected.has(p.id));
-  const options = availableProducts.map(p =>
-    `<option value="${p.id}">[${p.catalog_number}] ${p.name_zh}</option>`
-  ).join('');
   const inp = 'padding:7px 8px; border:1px solid #DDD; border-radius:4px; font-size:13px';
   return `
     <div style="margin-top:20px; border-top:2px dashed #E5E5EA; padding-top:16px">
-      <div style="font-size:12px;font-weight:700;color:#444;margin-bottom:14px">＋ 新增品項</div>
-
-      <div style="margin-bottom:16px">
-        <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:600">從產品資料庫選取</div>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-          <select id="extraProductSelect" style="flex:1;min-width:180px;${inp}">
-            <option value="">— 選擇產品 —</option>
-            ${options}
-          </select>
-          <input type="number" id="extraProductQty" value="1" min="1" max="99" style="width:64px;${inp};text-align:center">
-          <button class="btn btn-outline btn-sm" onclick="addExtraProduct()" style="white-space:nowrap">+ 加入</button>
-        </div>
+      <div style="font-size:12px;font-weight:700;color:#444;margin-bottom:14px">＋ 手動新增自訂品項</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px">
+        <input id="customItemName" placeholder="品名 *" style="${inp};grid-column:1/-1">
+        <input id="customItemCatalog" placeholder="料號（選填）" style="${inp}">
+        <input id="customItemQty" type="number" value="1" min="1" max="99" placeholder="數量" style="${inp}">
+        ${canSeeCost ? `<input id="customItemCost" type="number" min="0" step="1" placeholder="成本 *" style="${inp}">` : '<div></div>'}
+        <input id="customItemPrice" type="number" min="0" step="1" placeholder="報價單價 *" style="${inp}">
       </div>
-
-      <div>
-        <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:600">手動新增自訂品項</div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px">
-          <input id="customItemName" placeholder="品名 *" style="${inp};grid-column:1/-1">
-          <input id="customItemCatalog" placeholder="料號（選填）" style="${inp}">
-          <input id="customItemQty" type="number" value="1" min="1" max="99" placeholder="數量" style="${inp}">
-          ${canSeeCost ? `<input id="customItemCost" type="number" min="0" step="1" placeholder="成本 *" style="${inp}">` : '<div></div>'}
-          <input id="customItemPrice" type="number" min="0" step="1" placeholder="報價單價 *" style="${inp}">
-        </div>
-        <button class="btn btn-outline btn-sm" onclick="addCustomItem()">+ 新增自訂品項</button>
-      </div>
+      <button class="btn btn-outline btn-sm" onclick="addCustomItem()">+ 新增自訂品項</button>
     </div>`;
 }
 
@@ -400,52 +399,37 @@ function renderPriceColumn(p) {
 }
 
 // ── 依賴解析 ──────────────────────────────────────────────────
-// 遍歷所有已選產品（BOM + extra），收集其 dependencies
-// 排除已在 selected / extraSelected 中的項目（不重複帶入）
 function computeAutoDeps() {
   autoDeps = new Map();
-  const allSelected = [...selected.keys(), ...extraSelected.keys()];
+  const allSelected = [...extraSelected.keys()];
   for (const id of allSelected) {
     const p = products.find(x => x.id === id);
     if (!p?.dependencies?.length) continue;
     for (const dep of p.dependencies) {
       const rid = dep.requires_product_id;
-      if (selected.has(rid) || extraSelected.has(rid)) continue; // 已在清單中
-      // 取最大 quantity（多個父項都依賴同一個時）
+      if (extraSelected.has(rid)) continue; // 已在購物車中
       autoDeps.set(rid, Math.max(autoDeps.get(rid) || 0, dep.quantity));
     }
   }
 }
 
-// ── 移除非強制 BOM 品項 ────────────────────────────────────────
-function removeBomItem(id) {
-  if (requiredBomItems.has(id)) return; // 強制選配不可移除
-  selected.delete(id);
+// ── 購物車操作 ───────────────────────────────────────────────
+function addToCart(id) {
+  extraSelected.set(id, 1);
   renderProducts();
   renderSummary();
 }
 
-// ── Extra product (from DB) ───────────────────────────────────
-function addExtraProduct() {
-  const sel = document.getElementById('extraProductSelect');
-  const id  = parseInt(sel.value);
-  if (!id) { showToast('請選擇產品', 'error'); return; }
-  const qty = parseInt(document.getElementById('extraProductQty').value) || 1;
-  extraSelected.set(id, qty);
-  renderProducts();
-  renderSummary();
-}
-
-function removeExtraProduct(id) {
+function removeFromCart(id) {
   extraSelected.delete(id);
   renderProducts();
   renderSummary();
 }
 
-function changeExtraQty(id, delta) {
+function changeCartQty(id, delta) {
   if (!extraSelected.has(id)) return;
   const newQty = (extraSelected.get(id) || 1) + delta;
-  if (newQty < 1) {
+  if (newQty <= 0) {
     extraSelected.delete(id);
   } else if (newQty <= 99) {
     extraSelected.set(id, newQty);
@@ -511,28 +495,10 @@ function changeCustomQty(id, delta) {
   renderSummary();
 }
 
-// ── Change quantity ───────────────────────────────────────────
-function changeQty(id, delta) {
-  if (!selected.has(id)) return;
-  const newQty = (selected.get(id) || 1) + delta;
-  if (newQty < 1) {
-    // BOM 品項數量最低為 1，不允許移除
-    return;
-  } else if (newQty > 99) {
-    return;
-  } else {
-    selected.set(id, newQty);
-  }
-  renderProducts();
-  renderSummary();
-}
-
 // ── Render summary ────────────────────────────────────────────
 function renderSummary() {
-  const bomDbItems   = products.filter(p => selected.has(p.id));
-  const extraDbItems = products.filter(p => extraSelected.has(p.id));
-  const allDbItems   = [...bomDbItems, ...extraDbItems];
-  const hasItems     = allDbItems.length > 0 || customItems.length > 0;
+  const allDbItems = products.filter(p => extraSelected.has(p.id));
+  const hasItems   = allDbItems.length > 0 || customItems.length > 0;
 
   const tbody      = document.getElementById('summaryItems');
   const priceBlock = document.getElementById('priceBlock');
@@ -551,7 +517,7 @@ function renderSummary() {
   let rows = '';
 
   for (const p of allDbItems) {
-    const qty       = selected.has(p.id) ? selected.get(p.id) : extraSelected.get(p.id);
+    const qty       = extraSelected.get(p.id);
     const effPrice  = getEffectivePrice(p);
     const lineTotal = effPrice * qty;
     total       += lineTotal;
@@ -700,10 +666,6 @@ function clearCustomerSelect() {
   renderInvoice();
 }
 
-function escHtml(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 // 點擊其他地方關閉搜尋結果
 document.addEventListener('click', e => {
   if (!e.target.closest('#custSearchInput') && !e.target.closest('#custDropdown')) {
@@ -738,7 +700,7 @@ function openQuoteModal() {
   document.getElementById('quoteModal').classList.add('open');
 }
 
-// ── Category labels (shared with renderProducts) ──────────────
+// ── Category labels (shared with renderInvoice) ───────────────
 const INVOICE_CATEGORY_LABELS = {
   base:         '基礎主機',
   orientation:  '檢體夾具固定裝置',
@@ -753,9 +715,7 @@ const INVOICE_CATEGORY_LABELS = {
 };
 
 function renderInvoice() {
-  const bomDbItems   = products.filter(p => selected.has(p.id));
-  const extraDbItems = products.filter(p => extraSelected.has(p.id));
-  const items = [...bomDbItems, ...extraDbItems]; // DB items (BOM + extra)
+  const items = products.filter(p => extraSelected.has(p.id));
   const priceKey = user.role === 'customer' ? 'retail_price' : 'suggested_price';
 
   const custName  = document.getElementById('cust_name')?.value.trim()  || '（請填寫）';
@@ -770,8 +730,8 @@ function renderInvoice() {
   const expDate = new Date(now.getTime() + validDays * 86400000)
     .toLocaleDateString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit' });
 
-  const dbTotal     = items.reduce((s, p) => {
-    const qty = selected.has(p.id) ? selected.get(p.id) : extraSelected.get(p.id);
+  const dbTotal = items.reduce((s, p) => {
+    const qty = extraSelected.get(p.id);
     return s + getEffectivePrice(p) * (qty || 1);
   }, 0);
   const customTotal = customItems.reduce((s, ci) => s + ci.price * ci.quantity, 0);
@@ -785,14 +745,12 @@ function renderInvoice() {
     if (!grouped[p.category]) grouped[p.category] = [];
     grouped[p.category].push(p);
   });
-  // Note: customItems rendered separately after DB items loop
 
   let rowNum = 0;
   let tableRows = '';
   for (const cat of categoryOrder) {
     const catItems = grouped[cat];
     if (!catItems) continue;
-    // 分類標題列
     tableRows += `
       <tr>
         <td colspan="5" style="
@@ -803,13 +761,12 @@ function renderInvoice() {
       </tr>`;
     catItems.forEach(p => {
       rowNum++;
-      const qty       = selected.has(p.id) ? selected.get(p.id) : (extraSelected.get(p.id) || 1);
+      const qty       = extraSelected.get(p.id) || 1;
       const unitPrice = getEffectivePrice(p);
       const subtotal  = unitPrice * qty;
       const bg = rowNum % 2 === 0 ? '#FAFAFA' : '#FFFFFF';
       const canEdit   = user.role !== 'customer';
 
-      // 單價欄：可編輯（非客戶）或純文字（客戶）
       const priceCell = canEdit
         ? `<input
             id="invoice-price-${p.id}"
@@ -931,8 +888,8 @@ function renderInvoice() {
         <!-- 產品說明 -->
         <div style="padding:18px 36px; background:#FAFAFA">
           <div style="font-size:10px; font-weight:700; color:#E3001B; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:8px">配 置 產 品</div>
-          <div style="font-size:14px; font-weight:700; color:#1A1A2E">Leica HistoCore MULTICUT</div>
-          <div style="font-size:12px; color:#666; margin-top:3px">輪轉式切片機配置方案</div>
+          <div style="font-size:14px; font-weight:700; color:#1A1A2E">Leica Biosystems</div>
+          <div style="font-size:12px; color:#666; margin-top:3px">產品選購配置方案</div>
           <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap">
             <span style="background:#E8F0FE; color:#1565C0; font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px">
               共 ${items.length + customItems.length} 項配件
@@ -1094,7 +1051,6 @@ async function submitQuote() {
   if (!customer_name) { showToast('請先填寫客戶姓名', 'error'); return; }
 
   const productItems = [
-    ...[...selected.entries()].map(([id, qty]) => ({ product_id: id, quantity: qty })),
     ...[...extraSelected.entries()].map(([id, qty]) => ({ product_id: id, quantity: qty })),
     ...[...autoDeps.entries()].map(([id, qty]) => ({ product_id: id, quantity: qty })),
   ];
