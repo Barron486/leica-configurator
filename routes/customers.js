@@ -3,6 +3,7 @@
 const express   = require('express');
 const multer    = require('multer');
 const XLSX      = require('xlsx');
+const Anthropic = require('@anthropic-ai/sdk');
 const { getDb } = require('../database/schema');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -14,31 +15,72 @@ function adminOnly(req, res, next) {
   return res.status(403).json({ error: '無管理客戶權限' });
 }
 
-// ── 欄位名稱對應表（支援中英文常見寫法）────────────────────
-const FIELD_MAP = {
-  name:    [/^(聯絡人?|姓名|name|contact|客戶名稱?)$/i],
-  org:     [/^(單位|醫院|機構|公司|組織|org|organization|hospital|institution|department)$/i],
-  phone:   [/^(電話|手機|聯絡電話|phone|mobile|tel|telephone)$/i],
-  email:   [/^(email|e-mail|電子郵件|信箱|mail)$/i],
-  address: [/^(地址|住址|address|addr)$/i],
-  notes:   [/^(備註|注意|notes?|remark|comment|說明)$/i],
-};
-
-function detectField(colName) {
-  const col = String(colName).trim();
-  for (const [field, patterns] of Object.entries(FIELD_MAP)) {
-    if (patterns.some(rx => rx.test(col))) return field;
-  }
-  return null;
+function getApiKey() {
+  const envKey = process.env.ANTHROPIC_API_KEY;
+  if (envKey) return envKey;
+  try {
+    const db = getDb();
+    const row = db.prepare("SELECT value FROM api_settings WHERE key='anthropic_api_key'").get();
+    db.close();
+    return row?.value || '';
+  } catch { return ''; }
 }
 
-function mapRow(row) {
-  const result = {};
-  for (const [col, val] of Object.entries(row)) {
-    const field = detectField(col);
-    if (field && !result[field]) result[field] = String(val ?? '').trim();
+// ── 用 Claude 識別欄位 mapping（只傳欄位名 + 前 5 筆）──────
+// 回傳: { "Excel欄位名": "db_field", ... }  db_field ∈ {name,org,phone,email,address,notes}
+async function detectColumnMapping(columns, sampleRows, apiKey) {
+  const client = new Anthropic({ apiKey });
+  const prompt = `你是資料欄位分析師。分析 Excel 欄位名稱，對應到以下 6 個資料庫欄位之一：
+name（聯絡人姓名）、org（單位/醫院）、phone（電話）、email（電子郵件）、address（地址）、notes（備註）
+
+Excel 欄位：${columns.join('、')}
+前 3 筆範例：
+${JSON.stringify(sampleRows.slice(0, 3), null, 2)}
+
+只輸出 JSON 物件，key 為 Excel 欄位名，value 為對應的 db 欄位名。無法對應的欄位不要包含。
+範例：{"姓名":"name","醫院":"org","聯絡電話":"phone"}`;
+
+  const msg = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 300,
+    messages: [{ role: 'user', content: prompt }],
+  });
+  const text = msg.content[0].text.replace(/^```[\w]*\n?/gm, '').replace(/```\s*$/gm, '').trim();
+  const match = text.match(/\{[\s\S]+\}/);
+  return JSON.parse(match ? match[0] : text);
+}
+
+// ── Fallback：規則對應（AI 失敗時使用）────────────────────
+const FALLBACK_PATTERNS = {
+  name:    /^(聯絡人?|姓名|name|contact|客戶名稱?)$/i,
+  org:     /^(單位|醫院|機構|公司|組織|org|organization|hospital|institution|department)$/i,
+  phone:   /^(電話|手機|聯絡電話|phone|mobile|tel|telephone)$/i,
+  email:   /^(email|e-mail|電子郵件|信箱|mail)$/i,
+  address: /^(地址|住址|address|addr)$/i,
+  notes:   /^(備註|注意|notes?|remark|comment|說明)$/i,
+};
+function buildFallbackMapping(columns) {
+  const m = {};
+  for (const col of columns) {
+    for (const [field, rx] of Object.entries(FALLBACK_PATTERNS)) {
+      if (rx.test(String(col).trim()) && !Object.values(m).includes(field)) {
+        m[col] = field; break;
+      }
+    }
   }
-  return result;
+  return m;
+}
+
+// ── 套用 mapping 到每一筆資料 ─────────────────────────────
+function applyMapping(rows, mapping) {
+  return rows.map(row => {
+    const result = {};
+    for (const [col, val] of Object.entries(row)) {
+      const field = mapping[col];
+      if (field && !result[field]) result[field] = String(val ?? '').trim();
+    }
+    return result;
+  });
 }
 
 // ── POST /import/preview ──────────────────────────────────────
@@ -68,8 +110,22 @@ router.post('/import/preview', adminOnly, async (req, res) => {
     }
     if (!rows.length) return res.status(400).json({ error: 'Excel 無資料' });
 
-    // 本地欄位對應（不呼叫 AI）
-    const customers = rows.map(mapRow);
+    const columns = Object.keys(rows[0]);
+
+    // 用 Claude 識別欄位（只傳欄位名 + 前 3 筆，payload 極小）
+    let customers;
+    const apiKey = getApiKey();
+    if (apiKey) {
+      try {
+        const mapping = await detectColumnMapping(columns, rows, apiKey);
+        customers = applyMapping(rows, mapping);
+      } catch (e) {
+        console.error('[customer import] AI mapping failed, fallback:', e.message);
+        customers = applyMapping(rows, buildFallbackMapping(columns));
+      }
+    } else {
+      customers = applyMapping(rows, buildFallbackMapping(columns));
+    }
 
     // 查詢已存在的 email
     const db = getDb();
