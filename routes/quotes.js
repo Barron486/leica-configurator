@@ -50,7 +50,7 @@ function generateQuoteNumber(db, prefix) {
   }
 }
 
-const REVIEWER_ROLES = ['admin', 'finance', 'management', 'gm'];
+const REVIEWER_ROLES = ['admin', 'super_admin', 'finance', 'management', 'gm'];
 
 // 判斷此用戶是否有資格審核某報價
 function canReview(db, userId, userRole, quote) {
