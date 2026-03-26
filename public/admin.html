@@ -482,6 +482,17 @@
 
       <div class="card" id="custImportStep1">
         <h4 style="margin:0 0 12px">步驟一：上傳 Excel 檔案</h4>
+
+        <!-- AI 輔助說明 -->
+        <div style="margin-bottom:16px">
+          <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:#333">
+            🤖 AI 輔助說明 <span style="font-weight:400;color:#999">（選填）</span>
+          </label>
+          <textarea id="custImportPrompt" rows="2" placeholder="例：這份名單的「客戶全稱」欄位包含重複院所，同一間醫院不同院區也算重複，只保留一筆。"
+            style="width:100%;padding:8px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px;resize:vertical;font-family:inherit"></textarea>
+          <div style="font-size:11px;color:#AAA;margin-top:4px">AI 將根據此說明自動識別欄位並去除重複客戶</div>
+        </div>
+
         <div id="custDropZone" style="
           border:2px dashed #CCC; border-radius:8px; padding:40px;
           text-align:center; cursor:pointer; transition:border-color 0.2s

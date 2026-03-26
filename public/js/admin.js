@@ -1302,7 +1302,9 @@ function resetCustImport() {
   document.getElementById('custDropZone').style.opacity = '1';
   document.getElementById('custDropZone').style.pointerEvents = 'auto';
   document.getElementById('custExcelInput').value = '';
+  // 不清空 prompt，讓使用者可重複使用
 }
+
 
 function handleCustDrop(e) {
   e.preventDefault();
@@ -1327,6 +1329,8 @@ async function processCustFile(file) {
 
   const formData = new FormData();
   formData.append('file', file);
+  const prompt = (document.getElementById('custImportPrompt')?.value || '').trim();
+  if (prompt) formData.append('prompt', prompt);
 
   try {
     const token = localStorage.getItem('token');
@@ -1369,8 +1373,8 @@ function renderCustImportPreview(data) {
     ${data.error_count ? `<span class="summary-pill pill-error">錯誤 ${data.error_count}</span>` : ''}
   `;
   document.getElementById('custImportBody').innerHTML = data.customers.map(c => `
-    <tr style="${c._status==='error'?'background:#FFF5F5':''}">
-      <td>${STATUS_MAP[c._status] || c._status}</td>
+    <tr style="${c._status==='error'?'background:#FFF5F5':c._status==='duplicate'?'background:#FFFBF0':''}">
+      <td>${STATUS_MAP[c._status] || c._status}${c._dup_reason ? `<div style="font-size:10px;color:#999">${esc(c._dup_reason)}</div>` : ''}</td>
       <td>${esc(c.name||'—')}</td>
       <td>${esc(c.org||'—')}</td>
       <td>${esc(c.phone||'—')}</td>

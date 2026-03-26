@@ -26,16 +26,16 @@ function getApiKey() {
   } catch { return ''; }
 }
 
-// ── 用 Claude 識別欄位 mapping（只傳欄位名 + 前 5 筆）──────
-// 回傳: { "Excel欄位名": "db_field", ... }  db_field ∈ {name,org,phone,email,address,notes}
-async function detectColumnMapping(columns, sampleRows, apiKey) {
+// ── 用 Claude 識別欄位 mapping（只傳欄位名 + 前 3 筆）──────
+async function detectColumnMapping(columns, sampleRows, apiKey, userPrompt) {
   const client = new Anthropic({ apiKey });
+  const extra = userPrompt ? `\n用戶補充說明：${userPrompt}` : '';
   const prompt = `你是資料欄位分析師。分析 Excel 欄位名稱，對應到以下 6 個資料庫欄位之一：
 name（聯絡人姓名）、org（單位/醫院）、phone（電話）、email（電子郵件）、address（地址）、notes（備註）
 
 Excel 欄位：${columns.join('、')}
 前 3 筆範例：
-${JSON.stringify(sampleRows.slice(0, 3), null, 2)}
+${JSON.stringify(sampleRows.slice(0, 3), null, 2)}${extra}
 
 只輸出 JSON 物件，key 為 Excel 欄位名，value 為對應的 db 欄位名。無法對應的欄位不要包含。
 範例：{"姓名":"name","醫院":"org","聯絡電話":"phone"}`;
@@ -48,6 +48,37 @@ ${JSON.stringify(sampleRows.slice(0, 3), null, 2)}
   const text = msg.content[0].text.replace(/^```[\w]*\n?/gm, '').replace(/```\s*$/gm, '').trim();
   const match = text.match(/\{[\s\S]+\}/);
   return JSON.parse(match ? match[0] : text);
+}
+
+// ── 用 Claude 識別重複客戶（只傳 name/org 欄位）────────────
+// 回傳應「略過（重複）」的索引 Set
+async function deduplicateCustomers(customers, apiKey, userPrompt) {
+  // 只傳 name + org，payload 極小
+  const nameList = customers
+    .map((c, i) => `${i}: ${(c.name||'').trim()}${c.org ? ' ／ ' + c.org.trim() : ''}`)
+    .join('\n');
+
+  const extra = userPrompt ? `\n用戶補充說明：${userPrompt}` : '';
+  const client = new Anthropic({ apiKey });
+  const prompt = `以下是一份客戶名單（格式：索引: 姓名 ／ 單位）。
+請找出「重複或極相似」的客戶，每組重複只保留索引最小的一筆，其餘標為重複。
+判斷標準：姓名或單位名稱相同、縮寫相同、或明顯是同一個人/機構的不同寫法均視為重複。${extra}
+
+名單：
+${nameList}
+
+只輸出 JSON 陣列，內含所有「應略過（重複）」的索引數字。
+例：[1, 3, 7]。若無重複則輸出 []。`;
+
+  const msg = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 400,
+    messages: [{ role: 'user', content: prompt }],
+  });
+  const text = msg.content[0].text.replace(/^```[\w]*\n?/gm, '').replace(/```\s*$/gm, '').trim();
+  const match = text.match(/\[[\s\S]*\]/);
+  const arr = JSON.parse(match ? match[0] : '[]');
+  return new Set(arr.map(Number));
 }
 
 // ── Fallback：規則對應（AI 失敗時使用）────────────────────
@@ -111,13 +142,14 @@ router.post('/import/preview', adminOnly, async (req, res) => {
     if (!rows.length) return res.status(400).json({ error: 'Excel 無資料' });
 
     const columns = Object.keys(rows[0]);
+    const userPrompt = (req.body.prompt || '').trim();
 
-    // 用 Claude 識別欄位（只傳欄位名 + 前 3 筆，payload 極小）
+    // Step 1: Claude 識別欄位（只傳欄位名 + 前 3 筆）
     let customers;
     const apiKey = getApiKey();
     if (apiKey) {
       try {
-        const mapping = await detectColumnMapping(columns, rows, apiKey);
+        const mapping = await detectColumnMapping(columns, rows, apiKey, userPrompt);
         customers = applyMapping(rows, mapping);
       } catch (e) {
         console.error('[customer import] AI mapping failed, fallback:', e.message);
@@ -127,21 +159,34 @@ router.post('/import/preview', adminOnly, async (req, res) => {
       customers = applyMapping(rows, buildFallbackMapping(columns));
     }
 
-    // 查詢已存在的 email
+    // Step 2: Claude 去重（只傳 name/org，payload 極小）
+    let aiDupIndices = new Set();
+    if (apiKey && customers.length > 1) {
+      try {
+        aiDupIndices = await deduplicateCustomers(customers, apiKey, userPrompt);
+      } catch (e) {
+        console.error('[customer import] AI dedup failed:', e.message);
+      }
+    }
+
+    // Step 3: 查詢已存在的 email（資料庫去重）
     const db = getDb();
     const existingEmails = new Set(
       db.prepare("SELECT email FROM customers WHERE email != ''").all().map(r => r.email)
     );
     db.close();
 
-    const result = customers.map(c => {
+    const result = customers.map((c, i) => {
       const errors = [];
       if (!c.name?.trim()) errors.push('缺少姓名');
-      const isDup = c.email && existingEmails.has(c.email);
+      const isEmailDup = c.email && existingEmails.has(c.email);
+      const isAiDup    = aiDupIndices.has(i);
+      const dupReason  = isEmailDup ? 'Email 重複' : isAiDup ? 'AI 識別重複' : '';
       return {
         ...c,
-        _status: errors.length ? 'error' : isDup ? 'duplicate' : 'new',
-        _errors: errors,
+        _status:     errors.length ? 'error' : (isEmailDup || isAiDup) ? 'duplicate' : 'new',
+        _errors:     errors,
+        _dup_reason: dupReason,
       };
     });
 
