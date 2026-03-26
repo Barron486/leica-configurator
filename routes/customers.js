@@ -33,12 +33,126 @@ function adminOnly(req, res, next) {
   return res.status(403).json({ error: '無管理客戶權限' });
 }
 
+function getApiKey() {
+  const envKey = process.env.ANTHROPIC_API_KEY;
+  if (envKey) return envKey;
+  try {
+    const db = getDb();
+    const row = db.prepare("SELECT value FROM api_settings WHERE key='anthropic_api_key'").get();
+    db.close();
+    return row?.value || '';
+  } catch { return ''; }
+}
+
+// ── POST /import/preview ──────────────────────────────────────
+// 放在 POST / 之前，避免 Express v5 路由歧義
+router.post('/import/preview', adminOnly, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: '請上傳 Excel 檔案' });
+
+    const apiKey = getApiKey();
+    if (!apiKey) return res.status(500).json({ error: '請先在系統設定中填入 Anthropic API Key' });
+
+    let rows;
+    try {
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+      let sheetName = wb.SheetNames[0];
+      for (const name of wb.SheetNames) {
+        if (/客戶|customer|聯絡/i.test(name)) { sheetName = name; break; }
+      }
+      rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+    } catch (e) {
+      return res.status(400).json({ error: '無法解析 Excel 檔案：' + e.message });
+    }
+    if (!rows.length) return res.status(400).json({ error: 'Excel 無資料' });
+
+    const client = new Anthropic({ apiKey });
+    const userMsg = `Excel 共 ${rows.length} 筆，欄位：${Object.keys(rows[0]).join('、')}\n\n${JSON.stringify(rows, null, 2)}\n\n請直接輸出 JSON 陣列。`;
+
+    let customers;
+    try {
+      const msg = await client.messages.create({
+        model: 'claude-opus-4-6',
+        max_tokens: 4000,
+        system: CUSTOMER_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMsg }],
+      });
+      const text = msg.content[0].text.replace(/^```[\w]*\n?/gm, '').replace(/```\s*$/gm, '').trim();
+      const match = text.match(/\[[\s\S]+\]/);
+      customers = JSON.parse(match ? match[0] : text);
+    } catch (e) {
+      return res.status(500).json({ error: 'Claude 分析失敗：' + e.message });
+    }
+
+    const db = getDb();
+    const existingEmails = new Set(
+      db.prepare("SELECT email FROM customers WHERE email != ''").all().map(r => r.email)
+    );
+    db.close();
+
+    const result = customers.map(c => {
+      const errors = [];
+      if (!c.name?.trim()) errors.push('缺少姓名');
+      const isDup = c.email && existingEmails.has(c.email);
+      return {
+        ...c,
+        _status: errors.length ? 'error' : isDup ? 'duplicate' : 'new',
+        _errors: errors,
+      };
+    });
+
+    res.json({
+      total:           result.length,
+      new_count:       result.filter(r => r._status === 'new').length,
+      duplicate_count: result.filter(r => r._status === 'duplicate').length,
+      error_count:     result.filter(r => r._status === 'error').length,
+      customers: result,
+    });
+  } catch (e) {
+    console.error('customer import preview error:', e);
+    res.status(500).json({ error: '伺服器錯誤：' + e.message });
+  }
+});
+
+// ── POST /import/confirm ──────────────────────────────────────
+router.post('/import/confirm', adminOnly, (req, res) => {
+  try {
+    const { customers, skip_duplicates } = req.body;
+    if (!Array.isArray(customers) || !customers.length) {
+      return res.status(400).json({ error: '無客戶資料' });
+    }
+
+    const valid = customers.filter(c => c.name?.trim() && c._status !== 'error');
+    if (!valid.length) return res.status(400).json({ error: '沒有可匯入的資料' });
+
+    const db = getDb();
+    const insert = db.prepare(`
+      INSERT INTO customers (name, org, phone, email, address, notes)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    let inserted = 0, skipped = 0;
+    const doImport = db.transaction(() => {
+      for (const c of valid) {
+        if (c._status === 'duplicate' && skip_duplicates) { skipped++; continue; }
+        insert.run(c.name.trim(), c.org||'', c.phone||'', c.email||'', c.address||'', c.notes||'');
+        inserted++;
+      }
+    });
+    doImport();
+    db.close();
+
+    res.json({ message: '匯入完成', inserted, skipped });
+  } catch (e) {
+    console.error('customer import confirm error:', e);
+    res.status(500).json({ error: '伺服器錯誤：' + e.message });
+  }
+});
+
 // ── GET /search?q=關鍵字 ─────────────────────────────────────
-// 任何登入者都可搜尋（業務選客戶用）
 router.get('/search', (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q) return res.json([]);
-
   const db = getDb();
   const like = `%${q}%`;
   const rows = db.prepare(`
@@ -67,7 +181,6 @@ router.get('/', adminOnly, (req, res) => {
 router.post('/', adminOnly, (req, res) => {
   const { name, org, phone, email, address, notes } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: '請填寫客戶姓名' });
-
   const db = getDb();
   const r = db.prepare(`
     INSERT INTO customers (name, org, phone, email, address, notes)
@@ -82,7 +195,6 @@ router.post('/', adminOnly, (req, res) => {
 router.put('/:id', adminOnly, (req, res) => {
   const { name, org, phone, email, address, notes } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: '請填寫客戶姓名' });
-
   const db = getDb();
   db.prepare(`
     UPDATE customers SET name=?, org=?, phone=?, email=?, address=?, notes=?,
@@ -100,100 +212,6 @@ router.delete('/:id', adminOnly, (req, res) => {
   db.prepare('DELETE FROM customers WHERE id=?').run(req.params.id);
   db.close();
   res.json({ ok: true });
-});
-
-// ── POST /import/preview ──────────────────────────────────────
-router.post('/import/preview', adminOnly, upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: '請上傳 Excel 檔案' });
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: '伺服器未設定 ANTHROPIC_API_KEY' });
-
-  let rows;
-  try {
-    const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
-    let sheetName = wb.SheetNames[0];
-    for (const name of wb.SheetNames) {
-      if (/客戶|customer|聯絡/i.test(name)) { sheetName = name; break; }
-    }
-    rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
-  } catch (e) {
-    return res.status(400).json({ error: '無法解析 Excel 檔案：' + e.message });
-  }
-  if (!rows.length) return res.status(400).json({ error: 'Excel 無資料' });
-
-  const client = new Anthropic({ apiKey });
-  const userMsg = `Excel 共 ${rows.length} 筆，欄位：${Object.keys(rows[0]).join('、')}\n\n${JSON.stringify(rows, null, 2)}\n\n請直接輸出 JSON 陣列。`;
-
-  let customers;
-  try {
-    const msg = await client.messages.create({
-      model: 'claude-opus-4-6',
-      max_tokens: 4000,
-      system: CUSTOMER_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMsg }],
-    });
-    const text = msg.content[0].text.replace(/^```[\w]*\n?/gm, '').replace(/```\s*$/gm, '').trim();
-    const match = text.match(/\[[\s\S]+\]/);
-    customers = JSON.parse(match ? match[0] : text);
-  } catch (e) {
-    return res.status(500).json({ error: 'Claude 分析失敗：' + e.message });
-  }
-
-  const db = getDb();
-  const existingEmails = new Set(
-    db.prepare("SELECT email FROM customers WHERE email != ''").all().map(r => r.email)
-  );
-  db.close();
-
-  const result = customers.map(c => {
-    const errors = [];
-    if (!c.name?.trim()) errors.push('缺少姓名');
-    const isDup = c.email && existingEmails.has(c.email);
-    return {
-      ...c,
-      _status: errors.length ? 'error' : isDup ? 'duplicate' : 'new',
-      _errors: errors,
-    };
-  });
-
-  res.json({
-    total:          result.length,
-    new_count:      result.filter(r => r._status === 'new').length,
-    duplicate_count: result.filter(r => r._status === 'duplicate').length,
-    error_count:    result.filter(r => r._status === 'error').length,
-    customers: result,
-  });
-});
-
-// ── POST /import/confirm ──────────────────────────────────────
-router.post('/import/confirm', adminOnly, (req, res) => {
-  const { customers, skip_duplicates } = req.body;
-  if (!Array.isArray(customers) || !customers.length) {
-    return res.status(400).json({ error: '無客戶資料' });
-  }
-
-  const valid = customers.filter(c => c.name?.trim() && c._status !== 'error');
-  if (!valid.length) return res.status(400).json({ error: '沒有可匯入的資料' });
-
-  const db = getDb();
-  const insert = db.prepare(`
-    INSERT INTO customers (name, org, phone, email, address, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-
-  let inserted = 0, skipped = 0;
-  const doImport = db.transaction(() => {
-    for (const c of valid) {
-      if (c._status === 'duplicate' && skip_duplicates) { skipped++; continue; }
-      insert.run(c.name.trim(), c.org||'', c.phone||'', c.email||'', c.address||'', c.notes||'');
-      inserted++;
-    }
-  });
-  doImport();
-  db.close();
-
-  res.json({ message: '匯入完成', inserted, skipped });
 });
 
 module.exports = router;

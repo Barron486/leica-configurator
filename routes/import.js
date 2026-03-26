@@ -60,13 +60,24 @@ const SYSTEM_PROMPT = `你是 Leica 醫療設備產品資料分析師。
 5. 「主機」「基礎配置」→ is_base_unit:1
 6. 「含於基礎」「標準配件」→ is_included_in_base:1`;
 
+function getApiKey() {
+  const envKey = process.env.ANTHROPIC_API_KEY;
+  if (envKey) return envKey;
+  try {
+    const db = getDb();
+    const row = db.prepare("SELECT value FROM api_settings WHERE key='anthropic_api_key'").get();
+    db.close();
+    return row?.value || '';
+  } catch { return ''; }
+}
+
 // ── POST /api/admin/import/preview ────────────────────────────
 // 上傳 Excel → Claude 分析 → 回傳預覽資料（不寫入 DB）
 router.post('/preview', permImport, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '請上傳 Excel 檔案' });
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: '伺服器未設定 ANTHROPIC_API_KEY' });
+  const apiKey = getApiKey();
+  if (!apiKey) return res.status(500).json({ error: '請先在系統設定中填入 Anthropic API Key' });
 
   // 解析 Excel
   let rows;
@@ -144,8 +155,8 @@ router.post('/preview/pdf', permImport, upload.single('file'), async (req, res) 
     return res.status(400).json({ error: '請上傳 PDF 格式的檔案' });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: '伺服器未設定 ANTHROPIC_API_KEY' });
+  const apiKey = getApiKey();
+  if (!apiKey) return res.status(500).json({ error: '請先在系統設定中填入 Anthropic API Key' });
 
   // 提取 PDF 文字
   let pdfText;
