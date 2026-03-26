@@ -251,6 +251,27 @@ router.put('/:id/submit', async (req, res) => {
   res.json({ message: msg, status: newStatus });
 });
 
+// 撤回報價單（回到草稿）
+router.put('/:id/withdraw', (req, res) => {
+  const { id: userId } = req.user;
+  const isAdmin = ['admin', 'super_admin'].includes(req.user.role);
+  const db = getDb();
+
+  const quote = db.prepare('SELECT * FROM quotes WHERE id=?').get(req.params.id);
+  if (!quote) { db.close(); return res.status(404).json({ error: '報價單不存在' }); }
+  if (quote.sales_user_id !== userId && !isAdmin) { db.close(); return res.status(403).json({ error: '無權限' }); }
+
+  const withdrawable = ['submitted', 'pending_pm', 'pending_gm'];
+  if (!withdrawable.includes(quote.status)) {
+    db.close();
+    return res.status(400).json({ error: '此狀態無法撤回' });
+  }
+
+  db.prepare('UPDATE quotes SET status=?, submitted_at=NULL WHERE id=?').run('draft', req.params.id);
+  db.close();
+  res.json({ message: '報價單已撤回，可重新修改後提交' });
+});
+
 // 審核：核准
 router.put('/:id/approve', (req, res) => {
   const { role, id: userId } = req.user;

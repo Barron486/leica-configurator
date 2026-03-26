@@ -206,6 +206,16 @@ async function openQuote(id) {
     delBtn.onclick = () => deleteQuote(id, detail.quote_number);
     footer.appendChild(delBtn);
   }
+  // 待審批狀態可撤回
+  if (['submitted', 'pending_pm', 'pending_gm'].includes(detail.status)) {
+    const withdrawBtn = document.createElement('button');
+    withdrawBtn.className = 'btn btn-outline';
+    withdrawBtn.style.color = '#856404';
+    withdrawBtn.style.borderColor = '#FFC107';
+    withdrawBtn.textContent = '↩ 撤回修改';
+    withdrawBtn.onclick = () => withdrawQuote(id, detail.quote_number);
+    footer.appendChild(withdrawBtn);
+  }
   const closeBtn = document.createElement('button');
   closeBtn.className = 'btn btn-outline';
   closeBtn.textContent = '關閉';
@@ -213,6 +223,15 @@ async function openQuote(id) {
   footer.appendChild(closeBtn);
 
   document.getElementById('quoteModal').classList.add('open');
+}
+
+async function withdrawQuote(id, num) {
+  if (!confirm(`確定撤回「${num}」？撤回後狀態回到草稿，可重新修改後提交。`)) return;
+  const res = await apiFetch(`/api/quotes/${id}/withdraw`, { method: 'PUT' });
+  if (!res || !res.ok) { showToast('撤回失敗', 'error'); return; }
+  closeModal('quoteModal');
+  showToast('已撤回，可至草稿重新修改', 'success');
+  await loadQuotes();
 }
 
 async function deleteQuote(id, num) {
