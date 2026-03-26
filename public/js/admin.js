@@ -512,6 +512,22 @@ function escapeJs(str) {
 
 // ── Import Products ───────────────────────────────────────────
 let _importProducts = [];
+let _importType = 'excel'; // 'excel' | 'pdf'
+
+function setImportType(type) {
+  _importType = type;
+  const isExcel = type === 'excel';
+  document.getElementById('importTypeExcel').className = isExcel ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+  document.getElementById('importTypePdf').className   = isExcel ? 'btn btn-outline btn-sm' : 'btn btn-primary btn-sm';
+  document.getElementById('dropZoneIcon').textContent  = isExcel ? '📊' : '📄';
+  document.getElementById('dropZoneText').textContent  = isExcel ? '點擊或拖曳 Excel 檔案到此處' : '點擊或拖曳 PDF 檔案到此處';
+  document.getElementById('dropZoneHint').textContent  = isExcel ? '.xlsx / .xls，最大 10MB' : '.pdf，最大 10MB（需含可選取文字）';
+}
+
+function triggerFileInput() {
+  const id = _importType === 'pdf' ? 'pdfFileInput' : 'excelFileInput';
+  document.getElementById(id).click();
+}
 
 function handleDrop(e) {
   e.preventDefault();
@@ -526,10 +542,16 @@ function handleFileSelect(input) {
 }
 
 async function processFile(file) {
-  if (!file.name.match(/\.xlsx?$/i)) {
-    showToast('請選擇 .xlsx 或 .xls 檔案', 'error');
+  const isPdf   = file.name.match(/\.pdf$/i);
+  const isExcel = file.name.match(/\.xlsx?$/i);
+
+  if (!isPdf && !isExcel) {
+    showToast('請選擇 .xlsx、.xls 或 .pdf 檔案', 'error');
     return;
   }
+  // 自動切換 type 顯示
+  if (isPdf)   setImportType('pdf');
+  if (isExcel) setImportType('excel');
 
   // Show progress
   document.getElementById('uploadProgress').style.display = 'block';
@@ -540,9 +562,11 @@ async function processFile(file) {
   const formData = new FormData();
   formData.append('file', file);
 
+  const endpoint = isPdf ? '/api/admin/import/preview/pdf' : '/api/admin/import/preview';
+
   try {
     const token = localStorage.getItem('token');
-    const res = await fetch('/api/admin/import/preview', {
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token },
       body: formData,
@@ -568,6 +592,7 @@ function resetImportUI() {
   document.getElementById('dropZone').style.opacity = '1';
   document.getElementById('dropZone').style.pointerEvents = 'auto';
   document.getElementById('excelFileInput').value = '';
+  document.getElementById('pdfFileInput').value = '';
 }
 
 function renderImportPreview(data) {

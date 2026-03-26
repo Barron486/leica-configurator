@@ -3,6 +3,7 @@
 const express  = require('express');
 const multer   = require('multer');
 const XLSX     = require('xlsx');
+const pdfParse = require('pdf-parse');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getDb } = require('../database/schema');
 
@@ -89,6 +90,83 @@ router.post('/preview', permImport, upload.single('file'), async (req, res) => {
 ${JSON.stringify(rows, null, 2)}
 
 請直接輸出 JSON 陣列。`;
+
+  let products;
+  try {
+    const msg = await client.messages.create({
+      model: 'claude-opus-4-6',
+      max_tokens: 8000,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMsg }],
+    });
+    const text = msg.content[0].text.replace(/^```[\w]*\n?/gm, '').replace(/```\s*$/gm, '').trim();
+    const match = text.match(/\[[\s\S]+\]/);
+    products = JSON.parse(match ? match[0] : text);
+  } catch (e) {
+    return res.status(500).json({ error: 'Claude 分析失敗：' + e.message });
+  }
+
+  // 驗證並標記每筆狀態
+  const db = getDb();
+  const existing = new Set(
+    db.prepare('SELECT catalog_number FROM products').all().map(r => r.catalog_number)
+  );
+  db.close();
+
+  const result = products.map(p => {
+    const errors = [];
+    if (!p.catalog_number) errors.push('缺少料號');
+    if (!p.name_zh)        errors.push('缺少中文名稱');
+    if (!VALID_CATEGORIES.includes(p.category)) errors.push(`類別無效：${p.category}`);
+
+    return {
+      ...p,
+      _status: errors.length ? 'error' : existing.has(p.catalog_number) ? 'update' : 'new',
+      _errors: errors,
+      _category_label: CATEGORY_LABELS[p.category] || p.category,
+    };
+  });
+
+  res.json({
+    total: result.length,
+    new_count:    result.filter(p => p._status === 'new').length,
+    update_count: result.filter(p => p._status === 'update').length,
+    error_count:  result.filter(p => p._status === 'error').length,
+    products: result,
+  });
+});
+
+// ── POST /api/admin/import/preview/pdf ────────────────────────
+// 上傳 PDF → 提取文字 → Claude 分析 → 回傳預覽資料（不寫入 DB）
+router.post('/preview/pdf', permImport, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '請上傳 PDF 檔案' });
+  if (req.file.mimetype !== 'application/pdf' && !req.file.originalname.match(/\.pdf$/i)) {
+    return res.status(400).json({ error: '請上傳 PDF 格式的檔案' });
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: '伺服器未設定 ANTHROPIC_API_KEY' });
+
+  // 提取 PDF 文字
+  let pdfText;
+  try {
+    const data = await pdfParse(req.file.buffer);
+    pdfText = data.text;
+  } catch (e) {
+    return res.status(400).json({ error: '無法解析 PDF 檔案：' + e.message });
+  }
+
+  if (!pdfText || pdfText.trim().length < 20) {
+    return res.status(400).json({ error: 'PDF 無可讀取的文字內容（可能是掃描圖片型 PDF）' });
+  }
+
+  // 呼叫 Claude
+  const client = new Anthropic({ apiKey });
+  const userMsg = `以下是從 PDF 提取的產品資料文字內容：
+
+${pdfText.slice(0, 20000)}
+
+請從中識別所有產品資訊並輸出 JSON 陣列。`;
 
   let products;
   try {

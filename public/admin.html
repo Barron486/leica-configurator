@@ -243,24 +243,32 @@
   <!-- Tab: Import -->
   <div id="tab-import" class="tab-panel">
     <div class="flex-between" style="margin-bottom:16px">
-      <strong>📥 Excel 產品批次匯入（AI 自動識別）</strong>
+      <strong>📥 產品批次匯入（AI 自動識別）</strong>
     </div>
 
     <!-- Step 1: Upload -->
     <div class="card" id="importStep1">
-      <h4 style="margin:0 0 12px">步驟一：上傳 Excel 檔案</h4>
+      <h4 style="margin:0 0 12px">步驟一：選擇檔案類型並上傳</h4>
+
+      <!-- File type toggle -->
+      <div style="display:flex; gap:8px; margin-bottom:16px">
+        <button id="importTypeExcel" class="btn btn-primary btn-sm" onclick="setImportType('excel')">📊 Excel</button>
+        <button id="importTypePdf" class="btn btn-outline btn-sm" onclick="setImportType('pdf')">📄 PDF</button>
+      </div>
+
       <div id="dropZone" style="
         border: 2px dashed #CCC; border-radius:8px; padding:40px;
         text-align:center; cursor:pointer; transition:border-color 0.2s;
-      " onclick="document.getElementById('excelFileInput').click()"
+      " onclick="triggerFileInput()"
          ondragover="event.preventDefault(); this.style.borderColor='#005FAE'"
          ondragleave="this.style.borderColor='#CCC'"
          ondrop="handleDrop(event)">
-        <div style="font-size:2.5rem">📄</div>
-        <div style="margin-top:8px; color:#555">點擊或拖曳 Excel 檔案到此處</div>
-        <div class="text-muted text-small" style="margin-top:4px">.xlsx / .xls，最大 10MB</div>
+        <div id="dropZoneIcon" style="font-size:2.5rem">📊</div>
+        <div id="dropZoneText" style="margin-top:8px; color:#555">點擊或拖曳 Excel 檔案到此處</div>
+        <div id="dropZoneHint" class="text-muted text-small" style="margin-top:4px">.xlsx / .xls，最大 10MB</div>
       </div>
       <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleFileSelect(this)">
+      <input type="file" id="pdfFileInput" accept=".pdf" style="display:none" onchange="handleFileSelect(this)">
 
       <div style="margin-top:16px">
         <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
