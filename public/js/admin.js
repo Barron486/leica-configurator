@@ -90,9 +90,9 @@ function switchTab(name) {
   if (name === 'products')  loadProducts();
   if (name === 'users')     loadUsers();
   if (name === 'roleperms') loadRolePermissions();
-  if (name === 'bom')       loadBoms();
+  if (name === 'bom')       { loadInstrCats(); loadBoms(); }
   if (name === 'approvals') loadChain();
-  if (name === 'catalog')   loadCatalogItems();
+  if (name === 'catalog')   { loadInstrCats(); loadCatalogItems(); }
   if (name === 'customers') loadCustomers();
   if (name === 'settings')  loadApiSettings();
 }
@@ -754,15 +754,10 @@ async function loadBoms() {
     tbody.innerHTML = '<tr><td colspan="7" class="text-muted">尚無 BOM，請點右上角新增</td></tr>';
     return;
   }
-  const categoryLabels = {
-    digital_pathology: '數位病理',
-    tissue_processor: '脫水機', embedding_center: '包埋機',
-    microtome: '切片機（石蠟）', cryostat: '冷凍切片機', stainer: '染色機',
-  };
   tbody.innerHTML = boms.map(b => `
     <tr>
       <td><strong>${b.name}</strong>${b.subcategory ? `<br><span class="text-small text-muted">${b.subcategory}</span>` : ''}</td>
-      <td class="text-small" style="font-family:var(--font-mono);font-size:11px;color:#555">${categoryLabels[b.instrument_category] || '—'}</td>
+      <td class="text-small" style="font-family:var(--font-mono);font-size:11px;color:#555">${(_instrCats.find(x=>x.key===b.instrument_category)?.label_zh)||b.instrument_category||'—'}</td>
       <td class="text-small text-muted">${b.description || '—'}</td>
       <td style="text-align:center">${b.item_count}</td>
       <td class="price-cost">${b.total_cost > 0 ? formatPrice(b.total_cost) : '—'}</td>
@@ -963,12 +958,97 @@ function resetImport() {
   resetImportUI();
 }
 
+// ── Instrument Categories ──────────────────────────────────────
+let _instrCats = [];   // { key, label_zh, label_en, description, sort_order }
+
+async function loadInstrCats() {
+  const res = await apiFetch('/api/admin/catalog/categories');
+  if (!res || !res.ok) return;
+  _instrCats = await res.json();
+  renderInstrCatList();
+  populateCategorySelects();
+}
+
+function renderInstrCatList() {
+  const el = document.getElementById('instrCatList');
+  if (!el) return;
+  el.innerHTML = _instrCats.map(c => `
+    <div style="display:inline-flex;align-items:center;gap:6px;background:#F0F0F0;border-radius:20px;padding:4px 12px;font-size:13px">
+      <span style="font-weight:600">${esc(c.label_zh)}</span>
+      <span style="color:#888;font-size:11px">${c.key}</span>
+      <button onclick="openInstrCatModal('${esc(c.key)}')" style="background:none;border:none;cursor:pointer;padding:0;color:#555;font-size:12px">✎</button>
+      <button onclick="deleteInstrCat('${esc(c.key)}','${esc(c.label_zh)}')" style="background:none;border:none;cursor:pointer;padding:0;color:#C0392B;font-size:12px">✕</button>
+    </div>
+  `).join('') || '<span class="text-muted text-small">尚無大類</span>';
+}
+
+function populateCategorySelects() {
+  // catalog modal select
+  const catSel = document.getElementById('cat_category');
+  if (catSel) {
+    const cur = catSel.value;
+    catSel.innerHTML = _instrCats.map(c =>
+      `<option value="${c.key}"${c.key===cur?' selected':''}>${c.label_zh}</option>`
+    ).join('');
+    if (!catSel.value && _instrCats.length) catSel.value = _instrCats[0].key;
+  }
+  // bom modal select
+  const bomSel = document.getElementById('bom_category');
+  if (bomSel) {
+    const cur = bomSel.value;
+    bomSel.innerHTML = '<option value="">— 不顯示於產品目錄 —</option>' +
+      _instrCats.map(c =>
+        `<option value="${c.key}"${c.key===cur?' selected':''}>${c.label_zh}</option>`
+      ).join('');
+  }
+}
+
+function openInstrCatModal(key) {
+  const c = key ? _instrCats.find(x => x.key === key) : null;
+  document.getElementById('instrCatModalTitle').textContent = c ? '編輯大類' : '新增大類';
+  document.getElementById('ic_edit_key').value    = c?.key || '';
+  document.getElementById('ic_label_zh').value   = c?.label_zh || '';
+  document.getElementById('ic_label_en').value   = c?.label_en || '';
+  document.getElementById('ic_key').value        = c?.key || '';
+  document.getElementById('ic_description').value = c?.description || '';
+  document.getElementById('ic_sort').value       = c?.sort_order ?? 99;
+  // key 編輯時不可改
+  document.getElementById('ic_key_group').style.display = c ? 'none' : '';
+  document.getElementById('instrCatModal').classList.add('open');
+}
+
+async function saveInstrCat() {
+  const editKey = document.getElementById('ic_edit_key').value;
+  const body = {
+    key:         document.getElementById('ic_key').value.trim().toLowerCase(),
+    label_zh:    document.getElementById('ic_label_zh').value.trim(),
+    label_en:    document.getElementById('ic_label_en').value.trim(),
+    description: document.getElementById('ic_description').value.trim(),
+    sort_order:  parseInt(document.getElementById('ic_sort').value) || 99,
+  };
+  if (!body.label_zh) { showToast('請填寫中文名稱', 'error'); return; }
+  if (!editKey && !body.key) { showToast('請填寫識別 Key', 'error'); return; }
+
+  const url    = editKey ? `/api/admin/catalog/categories/${editKey}` : '/api/admin/catalog/categories';
+  const method = editKey ? 'PUT' : 'POST';
+  const res = await apiFetch(url, { method, body: JSON.stringify(editKey ? body : body) });
+  if (!res || !res.ok) { const d = await res.json().catch(()=>{}); showToast(d?.error || '儲存失敗', 'error'); return; }
+
+  showToast(editKey ? '大類已更新' : '大類已新增', 'success');
+  closeModal('instrCatModal');
+  await loadInstrCats();
+}
+
+async function deleteInstrCat(key, label) {
+  if (!confirm(`確定刪除大類「${label}」？\n\n若有 BOM 使用此大類將無法刪除。`)) return;
+  const res = await apiFetch(`/api/admin/catalog/categories/${key}`, { method: 'DELETE' });
+  if (!res || !res.ok) { const d = await res.json().catch(()=>{}); showToast(d?.error || '刪除失敗', 'error'); return; }
+  showToast('已刪除', 'success');
+  await loadInstrCats();
+}
+
 // ── Catalog Item Management ────────────────────────────────────
-const CATALOG_CATEGORY_LABELS = {
-  digital_pathology: '數位病理',
-  tissue_processor: '脫水機', embedding_center: '包埋機',
-  microtome: '切片機（石蠟）', cryostat: '冷凍切片機', stainer: '染色機',
-};
+const CATALOG_CATEGORY_LABELS = {};  // populated dynamically from _instrCats
 
 async function loadCatalogItems() {
   const res = await apiFetch('/api/admin/catalog');
@@ -982,7 +1062,7 @@ async function loadCatalogItems() {
   tbody.innerHTML = items.map(c => `
     <tr>
       <td><strong>${c.name}</strong></td>
-      <td class="text-small">${CATALOG_CATEGORY_LABELS[c.instrument_category]||c.instrument_category}</td>
+      <td class="text-small">${(_instrCats.find(x=>x.key===c.instrument_category)?.label_zh)||c.instrument_category}</td>
       <td class="text-small text-muted">${c.subcategory||'—'}</td>
       <td class="text-small text-muted">${c.short_description||'—'}</td>
       <td>

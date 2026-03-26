@@ -156,96 +156,9 @@
     <div style="font-size:12px; color:#AAA; font-style:italic">點選可用產品以進入配置報價</div>
   </div>
 
-  <!-- ── 數位病理 DP ───────────────────────────────── -->
-  <div class="section-block" style="margin-bottom:20px">
-    <div class="card">
-      <!-- Principle 9 & 10: split left/right header -->
-      <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-        <div style="display:flex; align-items:center; gap:8px">
-          <span>🏥</span>
-          <span style="font-weight:800; letter-spacing:-0.02em">數位病理</span>
-        </div>
-        <span class="eyebrow" style="color:rgba(255,255,255,0.40)">Digital Pathology</span>
-      </div>
-      <div class="card-body" id="dp-card-body">
+  <!-- 動態大類區塊（由 JS 渲染） -->
+  <div id="catalog-sections"></div>
 
-        <!-- BOM 動態插入：數位病理 -->
-        <div class="category-block" id="block-digital_pathology" style="display:none">
-          <div class="category-label">
-            <span class="category-label-main">數位病理解決方案</span>
-            <span class="category-label-en">Digital Pathology Solutions</span>
-          </div>
-          <div class="category-sub">整合掃描、AI 分析與管理的完整配置方案</div>
-          <div class="product-grid" id="grid-digital_pathology"></div>
-        </div>
-
-      </div>
-    </div>
-  </div>
-
-  <!-- Principle 16: Canvas Grid 全寬水平裝飾線 -->
-  <div class="canvas-grid-h"></div>
-
-  <!-- ── 組織病理 HI ───────────────────────────────── -->
-  <div class="section-block" style="margin-bottom:20px">
-    <div class="card">
-      <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-        <div style="display:flex; align-items:center; gap:8px">
-          <span>🔬</span>
-          <span style="font-weight:800; letter-spacing:-0.02em">組織病理設備</span>
-        </div>
-        <span class="eyebrow" style="color:rgba(255,255,255,0.40)">Histology Instruments</span>
-      </div>
-      <div class="card-body">
-
-        <div class="category-block">
-          <div class="category-label">
-            <span class="category-label-main">脫水機</span>
-            <span class="category-label-en">Tissue Processor</span>
-          </div>
-          <div class="category-sub">固定・脫水・透明・浸蠟全流程自動化</div>
-          <div class="product-grid" id="grid-tissue_processor"></div>
-        </div>
-
-        <div class="category-block">
-          <div class="category-label">
-            <span class="category-label-main">包埋機</span>
-            <span class="category-label-en">Embedding Center</span>
-          </div>
-          <div class="category-sub">將組織封入石蠟塊，精準定向</div>
-          <div class="product-grid" id="grid-embedding_center"></div>
-        </div>
-
-        <div class="category-block">
-          <div class="category-label">
-            <span class="category-label-main">切片機（石蠟）</span>
-            <span class="category-label-en">Microtome</span>
-          </div>
-          <div class="category-sub">將石蠟塊切成 3–5 µm 薄片</div>
-          <div class="product-grid" id="grid-microtome"></div>
-        </div>
-
-        <div class="category-block">
-          <div class="category-label">
-            <span class="category-label-main">冷凍切片機</span>
-            <span class="category-label-en">Cryostat</span>
-          </div>
-          <div class="category-sub">術中快速診斷與研究級冷凍切片</div>
-          <div class="product-grid" id="grid-cryostat"></div>
-        </div>
-
-        <div class="category-block">
-          <div class="category-label">
-            <span class="category-label-main">染色機</span>
-            <span class="category-label-en">Stainer</span>
-          </div>
-          <div class="category-sub">H&amp;E 及特殊染色自動化</div>
-          <div class="product-grid" id="grid-stainer"></div>
-        </div>
-
-      </div>
-    </div>
-  </div>
 </div><!-- /content wrapper -->
 
     </div><!-- /main-content -->
@@ -277,42 +190,60 @@
     const token = localStorage.getItem('token');
     const headers = { 'Authorization': 'Bearer ' + token };
     try {
-      const bomRes = await fetch('/api/admin/boms/catalog', { headers });
+      const [bomRes, catRes] = await Promise.all([
+        fetch('/api/admin/boms/catalog', { headers }),
+        fetch('/api/admin/catalog/categories', { headers }),
+      ]);
       const boms = bomRes.ok ? await bomRes.json() : [];
+      const cats = catRes.ok ? await catRes.json() : [];
 
-      // 所有 BOM 統一渲染：active=1 可點選配置，active=0 為 Coming Soon
+      // 建立大類 map：key → { label_zh, label_en, description }
+      const catsMap = {};
+      cats.forEach(c => { catsMap[c.key] = c; });
+
+      // 依大類 sort_order 排序 BOM
+      const catOrder = {};
+      cats.forEach((c, i) => { catOrder[c.key] = i; });
+      boms.sort((a, b) => (catOrder[a.instrument_category] ?? 99) - (catOrder[b.instrument_category] ?? 99));
+
+      // 渲染各大類
       for (const b of boms) {
         const status = b.active ? 'available' : 'coming_soon';
         const url    = b.active ? `/index.html?bom=${b.id}` : '';
-        if (b.instrument_category === 'digital_pathology') {
-          renderDpBom(b, status, url);
+        const catKey = b.instrument_category || '';
+        const catInfo = catsMap[catKey] || { label_zh: catKey, label_en: catKey, description: '' };
+
+        if (catKey === 'digital_pathology') {
+          renderDpBom(b, status, url, catInfo);
         } else {
-          const grid = document.getElementById('grid-' + b.instrument_category);
-          if (grid) appendProductCard(grid, b.name, b.short_description, status, url);
+          renderGenericBom(b, status, url, catInfo);
         }
       }
     } catch(e) { console.error('loadCatalog error', e); }
   }
 
   // 數位病理依 subcategory 動態建立分組區塊
-  function renderDpBom(b, status, url) {
-    const sub     = b.subcategory || '數位病理解決方案';
+  function renderDpBom(b, status, url, catInfo) {
+    // 確保 DP 區塊存在
+    ensureCatSection('digital_pathology', catInfo);
+    const cardBody = document.querySelector('#dp-card-body');
+
+    const sub     = b.subcategory || catInfo.label_zh;
     const safeKey = sub.replace(/\s+/g,'_').replace(/[^\w]/g,'');
     const blockId = 'block-dp-' + safeKey;
     let block = document.getElementById(blockId);
     if (!block) {
-      const meta     = DP_SUBCATEGORY_META[sub] || { en: sub, sub: '' };
-      const cardBody = document.querySelector('#dp-card-body');
-      block          = document.createElement('div');
+      const meta = DP_SUBCATEGORY_META[sub] || { en: b.subcategory || catInfo.label_en || sub, sub: catInfo.description || '' };
+      block = document.createElement('div');
       block.className = 'category-block';
-      block.id        = blockId;
-      const labelDiv  = document.createElement('div');
+      block.id = blockId;
+      const labelDiv = document.createElement('div');
       labelDiv.className = 'category-label';
-      const nameEl    = document.createElement('span');
+      const nameEl = document.createElement('span');
       nameEl.className = 'category-label-main';
       nameEl.textContent = sub;
-      const enEl      = document.createElement('span');
-      enEl.className  = 'category-label-en';
+      const enEl = document.createElement('span');
+      enEl.className = 'category-label-en';
       enEl.textContent = meta.en;
       labelDiv.appendChild(nameEl);
       labelDiv.appendChild(enEl);
@@ -323,14 +254,71 @@
         subEl.textContent = meta.sub;
         block.appendChild(subEl);
       }
-      const gridDiv   = document.createElement('div');
+      const gridDiv = document.createElement('div');
       gridDiv.className = 'product-grid';
-      gridDiv.id      = 'grid-dp-' + safeKey;
+      gridDiv.id = 'grid-dp-' + safeKey;
       block.appendChild(gridDiv);
-      cardBody.insertBefore(block, cardBody.firstChild);
+      if (cardBody) cardBody.appendChild(block);
     }
     const grid = document.getElementById('grid-dp-' + safeKey);
     if (grid) appendProductCard(grid, b.name, b.short_description, status, url);
+  }
+
+  // 通用大類：每個大類建立獨立 section card
+  function renderGenericBom(b, status, url, catInfo) {
+    ensureCatSection(b.instrument_category, catInfo);
+    const gridId = 'grid-' + b.instrument_category;
+    const grid = document.getElementById(gridId);
+    if (grid) appendProductCard(grid, b.name, b.short_description, status, url);
+  }
+
+  // 確保 section card 存在
+  function ensureCatSection(catKey, catInfo) {
+    if (document.getElementById('section-' + catKey)) return;
+    const container = document.getElementById('catalog-sections');
+    if (!container) return;
+
+    const sectionBlock = document.createElement('div');
+    sectionBlock.className = 'section-block';
+    sectionBlock.id = 'section-' + catKey;
+    sectionBlock.style.marginBottom = '20px';
+
+    if (catKey === 'digital_pathology') {
+      // DP 特殊 card 結構（留 dp-card-body 供 subcategory 動態插入）
+      sectionBlock.innerHTML = `
+        <div class="card">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span>🏥</span>
+              <span style="font-weight:800;letter-spacing:-0.02em">${catInfo.label_zh}</span>
+            </div>
+            <span class="eyebrow" style="color:rgba(255,255,255,0.40)">${catInfo.label_en || ''}</span>
+          </div>
+          <div class="card-body" id="dp-card-body"></div>
+        </div>`;
+    } else {
+      sectionBlock.innerHTML = `
+        <div class="card">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span>🔬</span>
+              <span style="font-weight:800;letter-spacing:-0.02em">${catInfo.label_zh}</span>
+            </div>
+            <span class="eyebrow" style="color:rgba(255,255,255,0.40)">${catInfo.label_en || ''}</span>
+          </div>
+          <div class="card-body">
+            <div class="category-block">
+              <div class="category-label">
+                <span class="category-label-main">${catInfo.label_zh}</span>
+                ${catInfo.label_en ? `<span class="category-label-en">${catInfo.label_en}</span>` : ''}
+              </div>
+              ${catInfo.description ? `<div class="category-sub">${catInfo.description}</div>` : ''}
+              <div class="product-grid" id="grid-${catKey}"></div>
+            </div>
+          </div>
+        </div>`;
+    }
+    container.appendChild(sectionBlock);
   }
 
   function appendProductCard(grid, name, shortDesc, status, url) {

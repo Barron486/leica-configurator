@@ -172,6 +172,14 @@ function initSchema() {
       updated_by INTEGER REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS instrument_categories (
+      key        TEXT PRIMARY KEY,
+      label_zh   TEXT NOT NULL,
+      label_en   TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 99
+    );
+
     CREATE TABLE IF NOT EXISTS customers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -495,6 +503,28 @@ function _migrate(db) {
         console.log('Migration 17: added bom_items.required');
       }
     } catch(e) { console.error('Migration 17 error:', e.message); }
+
+    // 20. instrument_categories 表（舊 DB 補建 + seed 既有硬編碼分類）
+    try {
+      db.exec(`CREATE TABLE IF NOT EXISTS instrument_categories (
+        key        TEXT PRIMARY KEY,
+        label_zh   TEXT NOT NULL,
+        label_en   TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        sort_order INTEGER DEFAULT 99
+      )`);
+      const insIC = db.prepare(`INSERT OR IGNORE INTO instrument_categories (key, label_zh, label_en, sort_order) VALUES (?,?,?,?)`);
+      const seedIC = db.transaction(() => {
+        insIC.run('digital_pathology', '數位病理', 'Digital Pathology', 1);
+        insIC.run('tissue_processor',  '脫水機',   'Tissue Processor',  2);
+        insIC.run('embedding_center',  '包埋機',   'Embedding Center',  3);
+        insIC.run('microtome',         '切片機（石蠟）', 'Microtome',    4);
+        insIC.run('cryostat',          '冷凍切片機', 'Cryostat',        5);
+        insIC.run('stainer',           '染色機',   'Stainer',           6);
+      });
+      seedIC();
+      console.log('Migration 20: instrument_categories table ready');
+    } catch(e) { console.error('Migration 20 error:', e.message); }
 
     // 19. customers 表（舊 DB 補建）
     try {

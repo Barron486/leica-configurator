@@ -362,6 +362,17 @@
 
   <!-- Tab: Catalog Items -->
   <div id="tab-catalog" class="tab-panel">
+
+    <!-- 大類管理 -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="flex-between" style="margin-bottom:12px">
+        <strong style="font-size:13px">🗂️ 大類管理</strong>
+        <button class="btn btn-outline btn-sm" onclick="openInstrCatModal()">+ 新增大類</button>
+      </div>
+      <div id="instrCatList" style="display:flex; flex-wrap:wrap; gap:8px"></div>
+    </div>
+
+    <!-- 目錄項目 -->
     <div class="flex-between" style="margin-bottom:16px">
       <strong>產品目錄管理</strong>
       <button class="btn btn-primary btn-sm" onclick="openAddCatalogItem()">+ 新增項目</button>
@@ -703,16 +714,6 @@
         <label>大類（儀器分類）</label>
         <select id="bom_category">
           <option value="">— 不顯示於產品目錄 —</option>
-          <optgroup label="數位病理">
-            <option value="digital_pathology">數位病理</option>
-          </optgroup>
-          <optgroup label="組織病理設備">
-            <option value="tissue_processor">脫水機</option>
-            <option value="embedding_center">包埋機</option>
-            <option value="microtome">切片機（石蠟）</option>
-            <option value="cryostat">冷凍切片機</option>
-            <option value="stainer">染色機</option>
-          </optgroup>
         </select>
       </div>
       <div class="form-group">
@@ -844,6 +845,43 @@
 </div>
 
 <!-- Catalog Item Modal -->
+<!-- Instrument Category Modal -->
+<div class="modal-overlay" id="instrCatModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3 id="instrCatModalTitle" style="margin:0">新增大類</h3>
+      <button class="btn-close" onclick="closeModal('instrCatModal')">✕</button>
+    </div>
+    <div class="modal-body" style="display:grid; gap:12px; padding:20px">
+      <input type="hidden" id="ic_edit_key">
+      <div class="form-group" style="margin:0">
+        <label>中文名稱 *</label>
+        <input type="text" id="ic_label_zh" placeholder="例：顯微鏡">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>英文名稱 <span class="text-muted text-small">（顯示在目錄頁）</span></label>
+        <input type="text" id="ic_label_en" placeholder="Microscope">
+      </div>
+      <div class="form-group" style="margin:0" id="ic_key_group">
+        <label>識別 Key <span class="text-muted text-small">（英文小寫 + 底線，建立後不可更改）</span></label>
+        <input type="text" id="ic_key" placeholder="microscope" pattern="[a-z0-9_]+">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>說明 <span class="text-muted text-small">（顯示在目錄頁小字）</span></label>
+        <input type="text" id="ic_description" placeholder="例：各類光學與電子顯微鏡">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>排序</label>
+        <input type="number" id="ic_sort" value="99" style="width:80px">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('instrCatModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveInstrCat()">儲存</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="catalogModal">
   <div class="modal" style="max-width:500px">
     <div class="modal-header">
@@ -856,16 +894,7 @@
       <div class="form-group">
         <label>大類 *</label>
         <select id="cat_category">
-          <optgroup label="數位病理">
-            <option value="digital_pathology">數位病理</option>
-          </optgroup>
-          <optgroup label="組織病理設備">
-            <option value="tissue_processor">脫水機</option>
-            <option value="embedding_center">包埋機</option>
-            <option value="microtome">切片機（石蠟）</option>
-            <option value="cryostat">冷凍切片機</option>
-            <option value="stainer">染色機</option>
-          </optgroup>
+          <option value="">載入中…</option>
         </select>
       </div>
       <div class="form-group">
