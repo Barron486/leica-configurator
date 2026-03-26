@@ -572,7 +572,11 @@ async function processFile(file) {
       body: formData,
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch { throw new Error(`伺服器回應非 JSON (${res.status}): ${text.slice(0, 120)}`); }
+
     if (!res.ok) {
       showToast(data.error || '分析失敗', 'error');
       resetImportUI();
