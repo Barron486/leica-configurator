@@ -1193,6 +1193,140 @@ async function deleteCustomer(id, name) {
   loadCustomers();
 }
 
+// ── Customer Import ───────────────────────────────────────────
+let _custImportData = [];
+
+function showCustImport() {
+  document.getElementById('custStep1').style.display = 'none';
+  document.getElementById('custStep2').style.display = 'block';
+  resetCustImport();
+}
+
+function hideCustImport() {
+  document.getElementById('custStep1').style.display = 'block';
+  document.getElementById('custStep2').style.display = 'none';
+  loadCustomers();
+}
+
+function resetCustImport() {
+  _custImportData = [];
+  document.getElementById('custImportStep1').style.display = 'block';
+  document.getElementById('custImportStep2').style.display = 'none';
+  document.getElementById('custImportStep3').style.display = 'none';
+  document.getElementById('custUploadProgress').style.display = 'none';
+  document.getElementById('custDropZone').style.opacity = '1';
+  document.getElementById('custDropZone').style.pointerEvents = 'auto';
+  document.getElementById('custExcelInput').value = '';
+}
+
+function handleCustDrop(e) {
+  e.preventDefault();
+  document.getElementById('custDropZone').style.borderColor = '#CCC';
+  const file = e.dataTransfer.files[0];
+  if (file) processCustFile(file);
+}
+
+function handleCustFileSelect(input) {
+  const file = input.files[0];
+  if (file) processCustFile(file);
+}
+
+async function processCustFile(file) {
+  if (!file.name.match(/\.xlsx?$/i)) {
+    showToast('請選擇 .xlsx 或 .xls 檔案', 'error');
+    return;
+  }
+  document.getElementById('custUploadProgress').style.display = 'block';
+  document.getElementById('custDropZone').style.opacity = '0.5';
+  document.getElementById('custDropZone').style.pointerEvents = 'none';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/customers/import/preview', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: formData,
+    });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch { throw new Error(`伺服器回應非 JSON (${res.status}): ${text.slice(0,120)}`); }
+
+    if (!res.ok) { showToast(data.error || '分析失敗', 'error'); resetCustImport(); return; }
+
+    _custImportData = data.customers;
+    renderCustImportPreview(data);
+  } catch (e) {
+    showToast('上傳失敗：' + e.message, 'error');
+    resetCustImport();
+  }
+}
+
+function renderCustImportPreview(data) {
+  document.getElementById('custUploadProgress').style.display = 'none';
+  document.getElementById('custDropZone').style.opacity = '1';
+  document.getElementById('custDropZone').style.pointerEvents = 'auto';
+  document.getElementById('custImportStep1').style.display = 'none';
+  document.getElementById('custImportStep2').style.display = 'block';
+
+  const STATUS_MAP = {
+    new:       '<span class="import-badge import-new">新增</span>',
+    duplicate: '<span class="import-badge import-update">重複</span>',
+    error:     '<span class="import-badge import-error">錯誤</span>',
+  };
+  document.getElementById('custImportSummary').innerHTML = `
+    <span class="summary-pill pill-total">共 ${data.total} 筆</span>
+    <span class="summary-pill pill-new">新增 ${data.new_count}</span>
+    ${data.duplicate_count ? `<span class="summary-pill pill-update">重複 ${data.duplicate_count}</span>` : ''}
+    ${data.error_count ? `<span class="summary-pill pill-error">錯誤 ${data.error_count}</span>` : ''}
+  `;
+  document.getElementById('custImportBody').innerHTML = data.customers.map(c => `
+    <tr style="${c._status==='error'?'background:#FFF5F5':''}">
+      <td>${STATUS_MAP[c._status] || c._status}</td>
+      <td>${esc(c.name||'—')}</td>
+      <td>${esc(c.org||'—')}</td>
+      <td>${esc(c.phone||'—')}</td>
+      <td>${esc(c.email||'—')}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.notes||'')}</td>
+      <td style="color:#C0392B;font-size:12px">${(c._errors||[]).join(', ')}</td>
+    </tr>
+  `).join('');
+
+  const hasValid = data.customers.some(c => c._status !== 'error');
+  document.getElementById('custConfirmBtn').disabled = !hasValid;
+}
+
+async function confirmCustImport() {
+  const valid = _custImportData.filter(c => c._status !== 'error');
+  if (!valid.length) { showToast('沒有可匯入的資料', 'error'); return; }
+
+  const skipDup = document.getElementById('custSkipDup').checked;
+  document.getElementById('custConfirmBtn').disabled = true;
+  document.getElementById('custConfirmBtn').textContent = '匯入中…';
+
+  try {
+    const res = await apiFetch('/api/customers/import/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ customers: valid, skip_duplicates: skipDup }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || '匯入失敗', 'error'); return; }
+
+    document.getElementById('custImportStep2').style.display = 'none';
+    document.getElementById('custImportStep3').style.display = 'block';
+    document.getElementById('custImportResult').textContent =
+      `匯入完成！新增 ${data.inserted} 筆${data.skipped ? `，略過重複 ${data.skipped} 筆` : ''}`;
+    showToast(`客戶匯入完成：新增 ${data.inserted} 筆`);
+  } catch (e) {
+    showToast('匯入失敗：' + e.message, 'error');
+    document.getElementById('custConfirmBtn').disabled = false;
+    document.getElementById('custConfirmBtn').textContent = '✅ 確認匯入';
+  }
+}
+
 async function loadApiSettings() {
   const res = await apiFetch('/api/admin/api-settings');
   if (!res || !res.ok) { showToast('載入失敗', 'error'); return; }

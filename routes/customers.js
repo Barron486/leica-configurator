@@ -1,7 +1,29 @@
 'use strict';
 
-const express = require('express');
+const express   = require('express');
+const multer    = require('multer');
+const XLSX      = require('xlsx');
+const Anthropic = require('@anthropic-ai/sdk');
 const { getDb } = require('../database/schema');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+const CUSTOMER_SYSTEM_PROMPT = `你是客戶資料分析師。
+分析 Excel 客戶資料，對應到以下資料庫欄位格式。
+
+欄位定義：
+- name（聯絡人姓名, 必填）
+- org（單位 / 醫院名稱, 選填）
+- phone（聯絡電話, 選填）
+- email（電子郵件, 選填）
+- address（地址, 選填）
+- notes（備註, 選填）
+
+回傳規則：
+1. 只輸出純 JSON 陣列，不加任何說明或 markdown
+2. 每筆必須包含 name
+3. 無法判斷的欄位直接省略
+4. 電話欄位保留原始格式`;
 
 const router = express.Router();
 
@@ -78,6 +100,100 @@ router.delete('/:id', adminOnly, (req, res) => {
   db.prepare('DELETE FROM customers WHERE id=?').run(req.params.id);
   db.close();
   res.json({ ok: true });
+});
+
+// ── POST /import/preview ──────────────────────────────────────
+router.post('/import/preview', adminOnly, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '請上傳 Excel 檔案' });
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: '伺服器未設定 ANTHROPIC_API_KEY' });
+
+  let rows;
+  try {
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    let sheetName = wb.SheetNames[0];
+    for (const name of wb.SheetNames) {
+      if (/客戶|customer|聯絡/i.test(name)) { sheetName = name; break; }
+    }
+    rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+  } catch (e) {
+    return res.status(400).json({ error: '無法解析 Excel 檔案：' + e.message });
+  }
+  if (!rows.length) return res.status(400).json({ error: 'Excel 無資料' });
+
+  const client = new Anthropic({ apiKey });
+  const userMsg = `Excel 共 ${rows.length} 筆，欄位：${Object.keys(rows[0]).join('、')}\n\n${JSON.stringify(rows, null, 2)}\n\n請直接輸出 JSON 陣列。`;
+
+  let customers;
+  try {
+    const msg = await client.messages.create({
+      model: 'claude-opus-4-6',
+      max_tokens: 4000,
+      system: CUSTOMER_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMsg }],
+    });
+    const text = msg.content[0].text.replace(/^```[\w]*\n?/gm, '').replace(/```\s*$/gm, '').trim();
+    const match = text.match(/\[[\s\S]+\]/);
+    customers = JSON.parse(match ? match[0] : text);
+  } catch (e) {
+    return res.status(500).json({ error: 'Claude 分析失敗：' + e.message });
+  }
+
+  const db = getDb();
+  const existingEmails = new Set(
+    db.prepare("SELECT email FROM customers WHERE email != ''").all().map(r => r.email)
+  );
+  db.close();
+
+  const result = customers.map(c => {
+    const errors = [];
+    if (!c.name?.trim()) errors.push('缺少姓名');
+    const isDup = c.email && existingEmails.has(c.email);
+    return {
+      ...c,
+      _status: errors.length ? 'error' : isDup ? 'duplicate' : 'new',
+      _errors: errors,
+    };
+  });
+
+  res.json({
+    total:          result.length,
+    new_count:      result.filter(r => r._status === 'new').length,
+    duplicate_count: result.filter(r => r._status === 'duplicate').length,
+    error_count:    result.filter(r => r._status === 'error').length,
+    customers: result,
+  });
+});
+
+// ── POST /import/confirm ──────────────────────────────────────
+router.post('/import/confirm', adminOnly, (req, res) => {
+  const { customers, skip_duplicates } = req.body;
+  if (!Array.isArray(customers) || !customers.length) {
+    return res.status(400).json({ error: '無客戶資料' });
+  }
+
+  const valid = customers.filter(c => c.name?.trim() && c._status !== 'error');
+  if (!valid.length) return res.status(400).json({ error: '沒有可匯入的資料' });
+
+  const db = getDb();
+  const insert = db.prepare(`
+    INSERT INTO customers (name, org, phone, email, address, notes)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let inserted = 0, skipped = 0;
+  const doImport = db.transaction(() => {
+    for (const c of valid) {
+      if (c._status === 'duplicate' && skip_duplicates) { skipped++; continue; }
+      insert.run(c.name.trim(), c.org||'', c.phone||'', c.email||'', c.address||'', c.notes||'');
+      inserted++;
+    }
+  });
+  doImport();
+  db.close();
+
+  res.json({ message: '匯入完成', inserted, skipped });
 });
 
 module.exports = router;
