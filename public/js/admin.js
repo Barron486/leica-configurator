@@ -1,3 +1,8 @@
+// ── Helpers ───────────────────────────────────────────────────
+function esc(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // ── Init ──────────────────────────────────────────────────────
 const REVIEWER_ROLES   = ['admin', 'super_admin', 'finance', 'management', 'gm', 'pm'];
 const ADMIN_ONLY_ROLES = ['admin', 'super_admin'];
