@@ -1,5 +1,5 @@
-/* ── Google Fonts: Inter Variable (Principle 4) ───────────── */
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+/* ── Google Fonts: Noto Sans TC + Inter ───────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
 
 /* ── Reset ───────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -39,7 +39,7 @@
 
 /* ── Base Typography (Principles 4–8) ────── */
 body {
-  font-family: "Inter", -apple-system, "Noto Sans TC", sans-serif;
+  font-family: "Noto Sans TC", "Inter", -apple-system, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11"; /* Principle 4: disable ss02 */
   background: var(--leica-gray);
   color: var(--leica-dark);
@@ -441,7 +441,7 @@ header .user-info { display: flex; align-items: center; gap: 10px; }
   font-weight: 600;
   color: #1A1A2E;
   text-align: right;
-  font-family: -apple-system, 'PingFang TC', 'Noto Sans TC', sans-serif;
+  font-family: "Noto Sans TC", -apple-system, sans-serif;
   box-shadow: 0 0 0 1px rgba(26,26,46,0.12);
   transition: box-shadow 0.12s, background 0.12s;
 }
