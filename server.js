@@ -106,6 +106,23 @@ app.get('/{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
+// ── Global Express error handler ──────────────────────────────
+// 攔截所有 route/middleware 未捕捉的錯誤（含 multer 錯誤）
+app.use((err, req, res, next) => {
+  console.error('[Express Error]', err.message, err.stack);
+  if (res.headersSent) return next(err);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({ error: err.message || 'Internal server error' });
+});
+
+// ── Process-level crash guards ────────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err.message, err.stack);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+
 app.listen(PORT, () => {
   console.log(`\n🔬 Leica 配置選擇器已啟動`);
   console.log(`   http://localhost:${PORT}\n`);

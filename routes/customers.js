@@ -46,8 +46,19 @@ function getApiKey() {
 
 // ── POST /import/preview ──────────────────────────────────────
 // 放在 POST / 之前，避免 Express v5 路由歧義
-router.post('/import/preview', adminOnly, upload.single('file'), async (req, res) => {
+router.post('/import/preview', adminOnly, async (req, res) => {
+  // 先用 Promise 包裝 multer，確保錯誤能被捕捉
   try {
+    await new Promise((resolve, reject) => {
+      upload.single('file')(req, res, (err) => { if (err) reject(err); else resolve(); });
+    });
+  } catch (uploadErr) {
+    console.error('[customer import] multer error:', uploadErr.message);
+    return res.status(400).json({ error: '檔案上傳失敗：' + uploadErr.message });
+  }
+
+  try {
+    console.log('[customer import] file received:', req.file?.originalname, req.file?.size);
     if (!req.file) return res.status(400).json({ error: '請上傳 Excel 檔案' });
 
     const apiKey = getApiKey();
