@@ -149,7 +149,7 @@ function _refreshInvoiceTotal() {
     draft.items.forEach(it => {
       if (it.product_id) {
         extraSelected.set(it.product_id, it.quantity);
-        if (it.unit_price_snapshot) customPrices.set(it.product_id, it.unit_price_snapshot);
+        if (it.unit_price_snapshot != null) customPrices.set(it.product_id, it.unit_price_snapshot);
       } else {
         customItems.push({
           id:            _nextCid++,
@@ -714,20 +714,25 @@ document.addEventListener('click', e => {
 
 function openPreviewModal() {
   _quotePreviewOnly = true;
-  ['cust_name','cust_org','cust_phone','cust_email'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = '';
-  });
+  // 編輯草稿模式保留已填入的客戶資料；新建模式則清空
+  if (!_editingQuoteId) {
+    ['cust_name','cust_org','cust_phone','cust_email'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+  }
   renderInvoice();
-  // 預覽模式：隱藏提交按鈕
   document.getElementById('quoteModalSubmitBtn').style.display = 'none';
   document.getElementById('quoteModal').classList.add('open');
 }
 
 function openQuoteModal() {
   _quotePreviewOnly = false;
-  ['cust_name','cust_org','cust_phone','cust_email'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = '';
-  });
+  // 編輯草稿模式保留已填入的客戶資料；新建模式則清空
+  if (!_editingQuoteId) {
+    ['cust_name','cust_org','cust_phone','cust_email'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+  }
   renderInvoice();
   document.getElementById('quoteModalSubmitBtn').style.display = '';
   document.getElementById('quoteModal').classList.add('open');
