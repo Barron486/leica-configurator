@@ -20,6 +20,7 @@ const bomRoutes      = require('./routes/bom');
 const approvalRoutes = require('./routes/approvals');
 const catalogRoutes  = require('./routes/catalog');
 const notificationsRoutes = require('./routes/notifications');
+const customerRoutes      = require('./routes/customers');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -97,6 +98,7 @@ app.use('/api/admin/boms',    bomRoutes);
 app.use('/api/admin/catalog', catalogRoutes);
 app.use('/api/approvals',    approvalRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/customers',    customerRoutes);
 app.use('/api/admin',         adminRoutes);
 
 // ── SPA fallback ──────────────────────────────────────────────

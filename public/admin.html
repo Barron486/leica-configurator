@@ -70,6 +70,7 @@
     <button class="tab-btn" id="tab-btn-approvals" onclick="switchTab('approvals')">🔐 審批人員</button>
     <button class="tab-btn" id="tab-btn-import" onclick="switchTab('import')">📥 匯入產品</button>
     <button class="tab-btn" onclick="switchTab('catalog')">🗂️ 目錄管理</button>
+    <button class="tab-btn" id="tab-btn-customers" onclick="switchTab('customers')">👥 客戶管理</button>
     <button class="tab-btn" id="tab-btn-settings" style="display:none" onclick="switchTab('settings')">⚙️ 系統設定</button>
   </div>
 
@@ -398,6 +399,76 @@
     </div>
     <div class="modal-body" id="quoteDetailBody"></div>
     <div class="modal-footer" id="quoteDetailFooter"></div>
+  </div>
+</div>
+
+<!-- Tab: Customers -->
+<div id="tab-customers" class="tab-panel">
+  <div class="flex-between" style="margin-bottom:16px">
+    <strong>👥 客戶管理</strong>
+    <button class="btn btn-primary btn-sm" onclick="openCustomerModal()">+ 新增客戶</button>
+  </div>
+
+  <div class="card" style="padding:0">
+    <div style="padding:12px 16px; border-bottom:1px solid #EEE">
+      <input type="text" id="customerSearchInput" placeholder="搜尋客戶姓名 / 單位 / 電話…"
+        style="width:100%; max-width:360px"
+        oninput="filterCustomers(this.value)">
+    </div>
+    <table class="data-table" id="customersTable">
+      <thead>
+        <tr>
+          <th>聯絡人姓名</th>
+          <th>單位 / 醫院</th>
+          <th>電話</th>
+          <th>Email</th>
+          <th>備註</th>
+          <th style="text-align:center">操作</th>
+        </tr>
+      </thead>
+      <tbody id="customersBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Customer Modal -->
+<div id="customerModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3 id="customerModalTitle" style="margin:0">新增客戶</h3>
+      <button class="btn-close" onclick="closeCustomerModal()">✕</button>
+    </div>
+    <div class="modal-body" style="display:grid; gap:12px; padding:20px">
+      <input type="hidden" id="cModalId">
+      <div class="form-group" style="margin:0">
+        <label>聯絡人姓名 *</label>
+        <input type="text" id="cModalName" placeholder="王大明">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>單位 / 醫院名稱</label>
+        <input type="text" id="cModalOrg" placeholder="台大醫院病理部">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>聯絡電話</label>
+        <input type="tel" id="cModalPhone" placeholder="02-1234-5678">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>電子郵件</label>
+        <input type="email" id="cModalEmail" placeholder="doctor@hospital.com">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>地址</label>
+        <input type="text" id="cModalAddress" placeholder="台北市中正區…">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>備註</label>
+        <textarea id="cModalNotes" rows="2" placeholder="例：年度採購窗口、VIP 客戶…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeCustomerModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveCustomer()">儲存</button>
+    </div>
   </div>
 </div>
 

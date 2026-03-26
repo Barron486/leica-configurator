@@ -109,6 +109,28 @@
       <!-- 客戶資料表單（不列印）-->
       <div class="no-print" style="background:#F5F5F7;border-radius:8px;padding:16px;margin-bottom:20px">
         <div style="font-weight:600;margin-bottom:12px;font-size:13px;color:#555">客戶資料</div>
+
+        <!-- 客戶搜尋 -->
+        <div style="margin-bottom:12px; position:relative">
+          <label style="font-size:12px;color:#555;display:block;margin-bottom:4px">
+            搜尋現有客戶
+            <span id="custSelectedBadge" style="display:none;margin-left:8px;background:#E3F2FD;color:#005FAE;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600"></span>
+          </label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="custSearchInput" placeholder="輸入客戶姓名、單位或電話…"
+              style="flex:1; max-width:360px"
+              oninput="customerSearchInput(this.value)"
+              autocomplete="off">
+            <button id="custClearBtn" class="btn btn-outline btn-sm" style="display:none;white-space:nowrap" onclick="clearCustomerSelect()">✕ 清除選擇</button>
+          </div>
+          <div id="custDropdown" style="
+            display:none; position:absolute; top:100%; left:0; min-width:360px; max-width:480px;
+            background:#FFF; border:1px solid #DDD; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.12);
+            z-index:100; max-height:240px; overflow-y:auto; margin-top:2px
+          "></div>
+        </div>
+        <div style="font-size:11px;color:#999;margin-bottom:12px">如搜尋不到，可直接在下方欄位手動填寫</div>
+
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div class="form-group" style="margin:0">
             <label>客戶姓名 *</label>

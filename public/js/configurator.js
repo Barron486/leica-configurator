@@ -578,6 +578,86 @@ function renderSummary() {
 
 // ── Quote Modal ───────────────────────────────────────────────
 let _quotePreviewOnly = false;
+let _custSearchTimer  = null;
+let _custSearchCache  = [];   // last search results
+
+// ── Customer Search ───────────────────────────────────────────
+function customerSearchInput(val) {
+  clearTimeout(_custSearchTimer);
+  const dd = document.getElementById('custDropdown');
+  if (!val.trim()) { dd.style.display = 'none'; return; }
+  _custSearchTimer = setTimeout(() => doCustomerSearch(val), 250);
+}
+
+async function doCustomerSearch(q) {
+  const token = localStorage.getItem('token');
+  try {
+    const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!res.ok) return;
+    _custSearchCache = await res.json();
+  } catch { return; }
+
+  const dd = document.getElementById('custDropdown');
+  if (!_custSearchCache.length) {
+    dd.innerHTML = '<div style="padding:12px 16px;color:#999;font-size:13px">找不到符合的客戶，請直接填寫下方欄位</div>';
+    dd.style.display = 'block';
+    return;
+  }
+  dd.innerHTML = _custSearchCache.map(c => `
+    <div onclick="selectCustomer(${c.id})" style="
+      padding:10px 16px; cursor:pointer; border-bottom:1px solid #F0F0F0;
+      display:flex; flex-direction:column; gap:2px;
+    " onmouseenter="this.style.background='#F5F9FF'" onmouseleave="this.style.background=''">
+      <span style="font-weight:600;font-size:13px">${escHtml(c.name)}${c.org ? ' · ' + escHtml(c.org) : ''}</span>
+      <span style="font-size:11px;color:#888">${[c.phone, c.email].filter(Boolean).join(' · ') || '（無聯絡資訊）'}</span>
+    </div>
+  `).join('');
+  dd.style.display = 'block';
+}
+
+function selectCustomer(id) {
+  const c = _custSearchCache.find(x => x.id === id);
+  if (!c) return;
+
+  document.getElementById('cust_name').value  = c.name  || '';
+  document.getElementById('cust_org').value   = c.org   || '';
+  document.getElementById('cust_phone').value = c.phone || '';
+  document.getElementById('cust_email').value = c.email || '';
+
+  const badge = document.getElementById('custSelectedBadge');
+  if (badge) { badge.textContent = c.org ? `${c.name} · ${c.org}` : c.name; badge.style.display = 'inline'; }
+  const clearBtn = document.getElementById('custClearBtn');
+  if (clearBtn) clearBtn.style.display = 'inline-flex';
+  document.getElementById('custSearchInput').value = '';
+  document.getElementById('custDropdown').style.display = 'none';
+  renderInvoice();
+}
+
+function clearCustomerSelect() {
+  ['cust_name','cust_org','cust_phone','cust_email'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const badge = document.getElementById('custSelectedBadge');
+  if (badge) badge.style.display = 'none';
+  const clearBtn = document.getElementById('custClearBtn');
+  if (clearBtn) clearBtn.style.display = 'none';
+  document.getElementById('custSearchInput').value = '';
+  renderInvoice();
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// 點擊其他地方關閉搜尋結果
+document.addEventListener('click', e => {
+  if (!e.target.closest('#custSearchInput') && !e.target.closest('#custDropdown')) {
+    const dd = document.getElementById('custDropdown');
+    if (dd) dd.style.display = 'none';
+  }
+});
 
 function openPreviewModal() {
   _quotePreviewOnly = true;

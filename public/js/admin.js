@@ -93,6 +93,7 @@ function switchTab(name) {
   if (name === 'bom')       loadBoms();
   if (name === 'approvals') loadChain();
   if (name === 'catalog')   loadCatalogItems();
+  if (name === 'customers') loadCustomers();
   if (name === 'settings')  loadApiSettings();
 }
 
@@ -1104,6 +1105,93 @@ const API_KEY_LABELS = {
   gemini_api_key:    'Google Gemini API Key',
   anthropic_api_key: 'Anthropic Claude API Key',
 };
+
+// ── Customer Management ───────────────────────────────────────
+let _allCustomers = [];
+
+async function loadCustomers() {
+  const res = await apiFetch('/api/customers');
+  if (!res || !res.ok) return;
+  _allCustomers = await res.json();
+  renderCustomers(_allCustomers);
+}
+
+function filterCustomers(q) {
+  if (!q.trim()) return renderCustomers(_allCustomers);
+  const lq = q.toLowerCase();
+  renderCustomers(_allCustomers.filter(c =>
+    (c.name||'').toLowerCase().includes(lq) ||
+    (c.org||'').toLowerCase().includes(lq) ||
+    (c.phone||'').includes(lq) ||
+    (c.email||'').toLowerCase().includes(lq)
+  ));
+}
+
+function renderCustomers(list) {
+  const tbody = document.getElementById('customersBody');
+  if (!tbody) return;
+  tbody.innerHTML = list.length ? list.map(c => `
+    <tr>
+      <td>${esc(c.name)}</td>
+      <td>${esc(c.org||'—')}</td>
+      <td>${esc(c.phone||'—')}</td>
+      <td>${esc(c.email||'—')}</td>
+      <td style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${esc(c.notes||'')}</td>
+      <td style="text-align:center; white-space:nowrap">
+        <button class="btn btn-outline btn-sm" onclick="openCustomerModal(${c.id})">編輯</button>
+        <button class="btn btn-sm" style="background:#FEE2E2;color:#C0392B;border:1px solid #FAD;margin-left:4px"
+          onclick="deleteCustomer(${c.id}, '${esc(c.name)}')">刪除</button>
+      </td>
+    </tr>
+  `).join('') : '<tr><td colspan="6" style="text-align:center;color:#999;padding:24px">尚無客戶資料</td></tr>';
+}
+
+function openCustomerModal(id) {
+  const c = id ? _allCustomers.find(x => x.id === id) : null;
+  document.getElementById('customerModalTitle').textContent = c ? '編輯客戶' : '新增客戶';
+  document.getElementById('cModalId').value      = c?.id || '';
+  document.getElementById('cModalName').value    = c?.name || '';
+  document.getElementById('cModalOrg').value     = c?.org || '';
+  document.getElementById('cModalPhone').value   = c?.phone || '';
+  document.getElementById('cModalEmail').value   = c?.email || '';
+  document.getElementById('cModalAddress').value = c?.address || '';
+  document.getElementById('cModalNotes').value   = c?.notes || '';
+  document.getElementById('customerModal').style.display = 'flex';
+}
+
+function closeCustomerModal() {
+  document.getElementById('customerModal').style.display = 'none';
+}
+
+async function saveCustomer() {
+  const id = document.getElementById('cModalId').value;
+  const body = {
+    name:    document.getElementById('cModalName').value.trim(),
+    org:     document.getElementById('cModalOrg').value.trim(),
+    phone:   document.getElementById('cModalPhone').value.trim(),
+    email:   document.getElementById('cModalEmail').value.trim(),
+    address: document.getElementById('cModalAddress').value.trim(),
+    notes:   document.getElementById('cModalNotes').value.trim(),
+  };
+  if (!body.name) { showToast('請填寫客戶姓名', 'error'); return; }
+
+  const url    = id ? `/api/customers/${id}` : '/api/customers';
+  const method = id ? 'PUT' : 'POST';
+  const res = await apiFetch(url, { method, body: JSON.stringify(body) });
+  if (!res || !res.ok) { showToast('儲存失敗', 'error'); return; }
+
+  showToast(id ? '客戶已更新' : '客戶已新增', 'success');
+  closeCustomerModal();
+  loadCustomers();
+}
+
+async function deleteCustomer(id, name) {
+  if (!confirm(`確定要刪除客戶「${name}」嗎？`)) return;
+  const res = await apiFetch(`/api/customers/${id}`, { method: 'DELETE' });
+  if (!res || !res.ok) { showToast('刪除失敗', 'error'); return; }
+  showToast('已刪除', 'success');
+  loadCustomers();
+}
 
 async function loadApiSettings() {
   const res = await apiFetch('/api/admin/api-settings');

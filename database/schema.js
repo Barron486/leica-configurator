@@ -172,6 +172,18 @@ function initSchema() {
       updated_by INTEGER REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS customers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      org  TEXT DEFAULT '',
+      phone TEXT DEFAULT '',
+      email TEXT DEFAULT '',
+      address TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS quote_approvals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       quote_id INTEGER NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
@@ -483,6 +495,22 @@ function _migrate(db) {
         console.log('Migration 17: added bom_items.required');
       }
     } catch(e) { console.error('Migration 17 error:', e.message); }
+
+    // 19. customers 表（舊 DB 補建）
+    try {
+      db.exec(`CREATE TABLE IF NOT EXISTS customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        org  TEXT DEFAULT '',
+        phone TEXT DEFAULT '',
+        email TEXT DEFAULT '',
+        address TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`);
+      console.log('Migration 19: customers table ready');
+    } catch(e) { console.error('Migration 19 error:', e.message); }
 
     // 16. api_settings: seed 初始 key（舊 DB 需補建表）
     try {
