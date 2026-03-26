@@ -11,6 +11,7 @@ let selected     = new Map(); // id → quantity
 let customPrices = new Map(); // id → manually entered price
 let baseProduct  = null;
 let _lastQuoteNumber = '';
+let _editingQuoteId  = null; // 編輯草稿時的報價單 ID
 let extraSelected    = new Map(); // product_id → quantity (sales-added from DB)
 let customItems      = [];         // [{id, name, catalogNumber, cost, price, quantity}]
 let _nextCid         = 1;
@@ -115,10 +116,64 @@ function _refreshInvoiceTotal() {
   products = await res.json();
   baseProduct = products.find(p => p.is_base_unit);
 
-  // 從 URL ?bom=<id> 讀取指定 BOM，預選其品項
-  const bomId = new URLSearchParams(location.search).get('bom');
+  const params = new URLSearchParams(location.search);
+  const bomId  = params.get('bom');
+  const editId = params.get('edit');
+
+  if (editId) {
+    // ── 編輯草稿模式 ──────────────────────────────────────────
+    const qRes = await apiFetch(`/api/quotes/${editId}`);
+    if (!qRes || !qRes.ok) {
+      document.getElementById('productList').innerHTML =
+        '<div style="text-align:center;padding:40px;color:#888">載入草稿失敗</div>';
+      return;
+    }
+    const draft = await qRes.json();
+    if (draft.status !== 'draft') {
+      document.getElementById('productList').innerHTML =
+        '<div style="text-align:center;padding:40px;color:#888">此報價單不是草稿，無法編輯</div>';
+      return;
+    }
+
+    _editingQuoteId = draft.id;
+
+    // 還原客戶資料
+    document.getElementById('cust_name').value  = draft.customer_name  || '';
+    document.getElementById('cust_org').value   = draft.customer_org   || '';
+    document.getElementById('cust_phone').value = draft.customer_phone || '';
+    document.getElementById('cust_email').value = draft.customer_email || '';
+    const caseEl = document.getElementById('case_notes');
+    if (caseEl) caseEl.value = draft.case_notes || '';
+
+    // 還原品項
+    draft.items.forEach(it => {
+      if (it.product_id) {
+        extraSelected.set(it.product_id, it.quantity);
+        if (it.unit_price_snapshot) customPrices.set(it.product_id, it.unit_price_snapshot);
+      } else {
+        customItems.push({
+          id:            _nextCid++,
+          name:          it.custom_item_name || it.name_zh || '',
+          catalogNumber: it.custom_catalog_number || '',
+          cost:          0,
+          price:         it.unit_price_snapshot || 0,
+          quantity:      it.quantity || 1,
+        });
+      }
+    });
+
+    // 頁首提示
+    const titleEl = document.querySelector('.main-topbar-title');
+    if (titleEl) titleEl.textContent = `編輯草稿：${draft.quote_number}`;
+
+    computeAutoDeps();
+    renderProducts();
+    renderSummary();
+    return;
+  }
+
+  // ── 從 BOM 新建報價模式 ───────────────────────────────────
   if (!bomId) {
-    // 未帶 BOM 參數時，提示用戶先到產品目錄選擇
     document.getElementById('productList').innerHTML = `
       <div style="text-align:center;padding:40px 20px;color:#888">
         <div style="font-size:32px;margin-bottom:12px">📦</div>
@@ -128,18 +183,16 @@ function _refreshInvoiceTotal() {
       </div>`;
     return;
   }
-  if (bomId) {
-    const bomRes = await apiFetch(`/api/admin/boms/${bomId}/config`);
-    if (bomRes && bomRes.ok) {
-      const { bom, items } = await bomRes.json();
-      items.forEach(item => {
-        selected.set(item.product_id, item.quantity);
-        if (item.required !== 0) requiredBomItems.add(item.product_id);
-      });
-      // 顯示 BOM 名稱於頁首
-      const titleEl = document.querySelector('.main-topbar-title');
-      if (titleEl && bom.name) titleEl.textContent = bom.name;
-    }
+
+  const bomRes = await apiFetch(`/api/admin/boms/${bomId}/config`);
+  if (bomRes && bomRes.ok) {
+    const { bom, items } = await bomRes.json();
+    items.forEach(item => {
+      selected.set(item.product_id, item.quantity);
+      if (item.required !== 0) requiredBomItems.add(item.product_id);
+    });
+    const titleEl = document.querySelector('.main-topbar-title');
+    if (titleEl && bom.name) titleEl.textContent = bom.name;
   }
 
   computeAutoDeps();
@@ -1049,33 +1102,66 @@ async function submitQuote() {
   }));
   const allItems = [...productItems, ...customItemsPayload];
 
-  const res = await apiFetch('/api/quotes', {
-    method: 'POST',
-    body: JSON.stringify({
-      customer_name,
-      customer_org:   document.getElementById('cust_org').value,
-      customer_email: document.getElementById('cust_email').value,
-      customer_phone: document.getElementById('cust_phone').value,
-      items: allItems,
-    }),
-  });
+  const payload = {
+    customer_name,
+    customer_org:   document.getElementById('cust_org').value,
+    customer_email: document.getElementById('cust_email').value,
+    customer_phone: document.getElementById('cust_phone').value,
+    items: allItems,
+  };
+  const case_notes = document.getElementById('case_notes')?.value?.trim() || '';
 
-  if (!res || !res.ok) {
-    const err = await res?.json();
+  let quoteId, quoteNumber;
+
+  if (_editingQuoteId) {
+    // 更新既有草稿
+    const updateRes = await apiFetch(`/api/quotes/${_editingQuoteId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    if (!updateRes || !updateRes.ok) {
+      const err = await updateRes?.json();
+      showToast(err?.error || '更新失敗', 'error');
+      return;
+    }
+    quoteId     = _editingQuoteId;
+    quoteNumber = new URLSearchParams(location.search).get('edit');
+  } else {
+    // 新建報價單
+    const res = await apiFetch('/api/quotes', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json();
+      showToast(err?.error || '提交失敗', 'error');
+      return;
+    }
+    const data = await res.json();
+    quoteId     = data.id;
+    quoteNumber = data.quote_number;
+  }
+
+  // 提交（草稿 → 待審批）
+  const submitRes = await apiFetch(`/api/quotes/${quoteId}/submit`, {
+    method: 'PUT',
+    body: JSON.stringify({ case_notes }),
+  });
+  if (!submitRes || !submitRes.ok) {
+    const err = await submitRes?.json();
     showToast(err?.error || '提交失敗', 'error');
     return;
   }
 
-  const data = await res.json();
-  const case_notes = document.getElementById('case_notes')?.value?.trim() || '';
-  await apiFetch(`/api/quotes/${data.id}/submit`, {
-    method: 'PUT',
-    body: JSON.stringify({ case_notes }),
-  });
-
-  _lastQuoteNumber = data.quote_number;
+  const submitData = await submitRes.json();
+  _lastQuoteNumber = quoteNumber;
   closeModal('quoteModal');
-  showToast(`報價單 ${data.quote_number} 已提交！`, 'success');
+  showToast(`報價單 ${quoteNumber} 已提交！`, 'success');
+
+  // 編輯草稿提交後跳回我的報價單
+  if (_editingQuoteId) {
+    setTimeout(() => { window.location.href = '/quotes.html'; }, 1200);
+  }
 }
 
 function closeModal(id) {

@@ -196,8 +196,14 @@ async function openQuote(id) {
 
   const footer = document.getElementById('quoteModalFooter');
   footer.innerHTML = '';
-  // 草稿可刪除
+  // 草稿可編輯、刪除
   if (detail.status === 'draft') {
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-primary btn-sm';
+    editBtn.textContent = '✏️ 編輯報價';
+    editBtn.onclick = () => { window.location.href = `/index.html?edit=${id}`; };
+    footer.appendChild(editBtn);
+
     const delBtn = document.createElement('button');
     delBtn.className = 'btn btn-outline';
     delBtn.style.color = '#DC3545';

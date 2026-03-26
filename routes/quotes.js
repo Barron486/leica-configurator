@@ -194,6 +194,45 @@ router.post('/', (req, res) => {
   res.status(201).json({ quote_number: quoteNumber, id: quoteId });
 });
 
+// 更新草稿（客戶資料 + 品項全替換）
+router.put('/:id', (req, res) => {
+  const { role, id: userId } = req.user;
+  const { customer_name, customer_org, customer_email, customer_phone, items } = req.body;
+  if (!customer_name || !items || items.length === 0) {
+    return res.status(400).json({ error: '請填寫客戶名稱與選擇產品' });
+  }
+  const db = getDb();
+  const quote = db.prepare('SELECT * FROM quotes WHERE id=?').get(req.params.id);
+  if (!quote) { db.close(); return res.status(404).json({ error: '報價單不存在' }); }
+  const isAdmin = ['admin', 'super_admin'].includes(role);
+  if (quote.sales_user_id !== userId && !isAdmin) { db.close(); return res.status(403).json({ error: '無權限' }); }
+  if (quote.status !== 'draft') { db.close(); return res.status(400).json({ error: '只有草稿可以修改' }); }
+
+  const priceType = (role === 'admin' || role === 'sales') ? 'suggested' : 'retail';
+  const insertItem = db.prepare(`
+    INSERT INTO quote_items (quote_id, product_id, custom_item_name, custom_catalog_number, quantity, unit_price_snapshot, price_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const doUpdate = db.transaction(() => {
+    db.prepare('UPDATE quotes SET customer_name=?, customer_org=?, customer_email=?, customer_phone=? WHERE id=?')
+      .run(customer_name, customer_org || '', customer_email || '', customer_phone || '', req.params.id);
+    db.prepare('DELETE FROM quote_items WHERE quote_id=?').run(req.params.id);
+    for (const item of items) {
+      if (item.product_id) {
+        const pricing = db.prepare('SELECT * FROM pricing WHERE product_id=?').get(item.product_id);
+        const price = item.unit_price ?? (pricing ? (priceType === 'suggested' ? pricing.suggested_price : pricing.retail_price) : 0);
+        insertItem.run(req.params.id, item.product_id, '', '', item.quantity || 1, price, priceType);
+      } else if (item.custom_name) {
+        insertItem.run(req.params.id, null, item.custom_name, item.custom_catalog_number || '', item.quantity || 1, parseFloat(item.unit_price) || 0, 'custom');
+      }
+    }
+  });
+  doUpdate();
+  db.close();
+  res.json({ message: '草稿已更新' });
+});
+
 // Submit quote
 router.put('/:id/submit', async (req, res) => {
   const { id: userId } = req.user;
