@@ -56,6 +56,33 @@ function updateInvoicePrice(id, qty, inputEl) {
   renderSummary();
 }
 
+// 報價單內調整數量 — 局部更新小計與合計，不重繪整張
+function updateInvoiceQty(id, delta) {
+  const current = extraSelected.get(id) || 1;
+  const newQty = current + delta;
+  if (newQty < 1) return; // 最少 1
+  if (newQty > 99) return;
+  extraSelected.set(id, newQty);
+
+  const qtyEl = document.getElementById(`invoice-qty-${id}`);
+  if (qtyEl) qtyEl.textContent = newQty;
+
+  // 取得目前單價（可能已被用戶編輯過）
+  const priceInput = document.getElementById(`invoice-price-${id}`);
+  const unitPrice = priceInput
+    ? (parseFloat(priceInput.value) || 0)
+    : (customPrices.has(id) ? customPrices.get(id) : (products.find(p => p.id === id) ? getEffectivePrice(products.find(p => p.id === id)) : 0));
+
+  const sub = document.getElementById(`invoice-sub-${id}`);
+  if (sub) sub.textContent = unitPrice > 0 ? formatPrice(unitPrice * newQty) : '';
+
+  // 同步 priceInput 的 oninput binding（qty 改了，subtotal 計算需要新 qty）
+  if (priceInput) priceInput.setAttribute('oninput', `updateInvoicePrice(${id}, ${newQty}, this)`);
+
+  _refreshInvoiceTotal();
+  renderSummary();
+}
+
 function _refreshInvoiceTotal() {
   const allDbItems = [
     ...products.filter(p => extraSelected.has(p.id)),
@@ -891,12 +918,19 @@ function renderInvoice() {
           <td style="padding:9px 10px; color:#222; font-size:12.5px; line-height:1.4">
             ${p.name_zh}
             ${p.is_included_in_base && !p.is_base_unit ? '<span style="font-size:10px;color:#28A745;margin-left:4px">（含於主機）</span>' : ''}
+            ${p.description ? `<div style="font-size:10.5px;color:#888;margin-top:3px;line-height:1.5;font-weight:400">${escHtml(p.description)}</div>` : ''}
           </td>
           <td style="padding:9px 10px; color:#888; font-size:11px; font-family:monospace; white-space:nowrap">${p.catalog_number}</td>
           <td style="padding:9px 10px; text-align:right; color:#555; font-size:12px; white-space:nowrap">
             ${priceCell}
           </td>
-          <td style="padding:9px 10px; text-align:center; color:#1A1A2E; font-size:12.5px; font-weight:600">${qty}</td>
+          <td style="padding:9px 10px; text-align:center; color:#1A1A2E; font-size:12.5px; font-weight:600; white-space:nowrap">
+            <div style="display:inline-flex;align-items:center;gap:4px">
+              <button onclick="updateInvoiceQty(${p.id},-1)" style="width:20px;height:20px;border:1px solid #DDD;border-radius:4px;background:#FFF;cursor:pointer;font-size:13px;line-height:1;padding:0">−</button>
+              <span id="invoice-qty-${p.id}" style="min-width:20px;text-align:center">${qty}</span>
+              <button onclick="updateInvoiceQty(${p.id},1)" style="width:20px;height:20px;border:1px solid #DDD;border-radius:4px;background:#FFF;cursor:pointer;font-size:13px;line-height:1;padding:0">+</button>
+            </div>
+          </td>
           <td id="invoice-sub-${p.id}" style="padding:9px 10px; text-align:right; color:#1A1A2E; font-size:12.5px; font-weight:700; white-space:nowrap">
             ${subtotal > 0 ? formatPrice(subtotal) : ''}
           </td>
