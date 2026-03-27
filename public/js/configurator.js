@@ -17,6 +17,8 @@ let _nextCid         = 1;
 let autoDeps         = new Map();  // product_id → quantity（依賴自動帶入）
 let _cartSearch      = '';
 let _cartCatFilter   = '';
+let _bomMode         = false;  // 從特定 BOM 進入時為 true，左側只顯示該 BOM 品項
+let _bomName         = '';     // BOM 名稱（顯示用）
 
 // ── Price helpers ─────────────────────────────────────────────
 function getPriceKey() {
@@ -174,11 +176,27 @@ function _refreshInvoiceTotal() {
     const bomRes = await apiFetch(`/api/admin/boms/${bomId}/config`);
     if (bomRes && bomRes.ok) {
       const { bom, items } = await bomRes.json();
+      _bomMode = true;
+      _bomName = bom.name || '';
+      // 儲存 BOM 品項的完整資訊（名稱、料號）供左側顯示
       items.forEach(item => {
         extraSelected.set(item.product_id, item.quantity);
       });
       const titleEl = document.querySelector('.main-topbar-title');
-      if (titleEl && bom.name) titleEl.textContent = bom.name;
+      if (titleEl && bom.name) titleEl.textContent = bom.name + ' 配置報價';
+      // 把 BOM 品項資訊存入 products 陣列（若原本不在其中）
+      items.forEach(item => {
+        if (item.name_zh && !products.find(p => p.id === item.product_id)) {
+          products.push({
+            id: item.product_id,
+            name_zh: item.name_zh,
+            catalog_number: item.catalog_number || '',
+            category: item.category || 'accessory',
+            description: item.description || '',
+            sort_order: 99,
+          });
+        }
+      });
     }
   }
 
@@ -194,6 +212,12 @@ function _refreshInvoiceTotal() {
 function renderProducts() {
   computeAutoDeps();
   const container = document.getElementById('productList');
+
+  // BOM 模式：只顯示該 BOM 的品項，不顯示完整產品目錄
+  if (_bomMode) {
+    renderBomProducts(container);
+    return;
+  }
 
   const categoryOrder = ['base','orientation','clamping','holder','blade_base','blade_holder','blade','cooling','lighting','accessory'];
 
@@ -342,6 +366,87 @@ function renderProducts() {
   // 手動新增自訂品項表單（一直顯示）
   html += _renderCustomItemForm();
 
+  container.innerHTML = html;
+}
+
+// ── BOM 模式：只顯示 BOM 品項清單 ─────────────────────────────
+function renderBomProducts(container) {
+  const cartItems = products.filter(p => extraSelected.has(p.id));
+  const depItems  = products.filter(p => autoDeps.has(p.id) && !extraSelected.has(p.id));
+
+  let html = `
+    <div style="background:#F0F4FF;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#1565C0;display:flex;align-items:center;gap:8px">
+      <span style="font-size:16px">📋</span>
+      <span><strong>${escHtml(_bomName)}</strong> 配置品項清單。如需新增其他品項，請使用下方「手動新增自訂品項」。</span>
+    </div>`;
+
+  if (!cartItems.length && !depItems.length) {
+    html += `<div style="text-align:center;padding:32px;color:#AAA;font-size:13px">無配置品項</div>`;
+  }
+
+  for (const p of cartItems) {
+    const qty = extraSelected.get(p.id) || 1;
+    html += `<div class="product-item selected">
+      <div class="product-info">
+        <div class="product-name">${escHtml(p.name_zh)}</div>
+        <div class="product-code">${escHtml(p.catalog_number)}</div>
+        ${p.description ? `<div class="product-desc">${escHtml(p.description)}</div>` : ''}
+      </div>
+      <div class="product-price">
+        ${renderPriceColumn(p)}
+        <div class="qty-stepper" onclick="event.stopPropagation()">
+          <button class="qty-btn" onclick="changeCartQty(${p.id}, -1)">−</button>
+          <span class="qty-val">${qty}</span>
+          <button class="qty-btn" onclick="changeCartQty(${p.id}, 1)">+</button>
+        </div>
+        <button class="btn btn-outline btn-sm" style="margin-top:6px;color:#DC3545;border-color:#DC3545;font-size:11px" onclick="removeFromCart(${p.id})">移除</button>
+      </div>
+    </div>`;
+  }
+
+  for (const p of depItems) {
+    const qty = autoDeps.get(p.id);
+    html += `<div class="product-item selected" style="opacity:0.85;background:#F0F4FF">
+      <div class="product-info">
+        <div class="product-name">${escHtml(p.name_zh)} <span style="color:#5B8DEF;font-size:10px;font-weight:600">⬡ 自動帶入</span></div>
+        <div class="product-code">${escHtml(p.catalog_number)}</div>
+      </div>
+      <div class="product-price">
+        ${renderPriceColumn(p)}
+        <div class="qty-stepper">
+          <button class="qty-btn" disabled style="opacity:0.4">−</button>
+          <span class="qty-val">${qty}</span>
+          <button class="qty-btn" disabled style="opacity:0.4">+</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // 自訂品項
+  if (customItems.length > 0) {
+    html += `<div style="margin-top:16px;border-top:1px solid #EEE;padding-top:12px">
+      <div style="font-size:11px;font-weight:700;color:#444;margin-bottom:8px">自訂品項</div>`;
+    for (const ci of customItems) {
+      html += `<div class="product-item selected">
+        <div class="product-info">
+          <div class="product-name">${escHtml(ci.name)}</div>
+          <div class="product-code">${escHtml(ci.catalogNumber || '—')}</div>
+        </div>
+        <div class="product-price">
+          <div class="price-suggest">${ci.price > 0 ? formatPrice(ci.price) : '洽詢'}</div>
+          <div class="qty-stepper" onclick="event.stopPropagation()">
+            <button class="qty-btn" onclick="changeCustomQty(${ci.id}, -1)">−</button>
+            <span class="qty-val">${ci.quantity}</span>
+            <button class="qty-btn" onclick="changeCustomQty(${ci.id}, 1)">+</button>
+          </div>
+          <button class="btn btn-outline btn-sm" style="margin-top:6px;color:#DC3545;border-color:#DC3545;font-size:11px" onclick="removeCustomItem(${ci.id})">移除</button>
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += _renderCustomItemForm();
   container.innerHTML = html;
 }
 
