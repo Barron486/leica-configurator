@@ -48,7 +48,7 @@ router.get('/:id/config', notReadOnly, (req, res) => {
   if (!bom) { db.close(); return res.status(404).json({ error: 'BOM 不存在' }); }
   const items = db.prepare(`
     SELECT bi.product_id, bi.quantity, bi.required,
-      p.name_zh, p.catalog_number, p.category
+      p.name_zh, p.catalog_number, p.category, p.description
     FROM bom_items bi
     JOIN products p ON p.id = bi.product_id
     WHERE bi.bom_id = ?

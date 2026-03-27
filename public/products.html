@@ -178,7 +178,7 @@
       <table class="data-table" style="margin:0">
         <thead>
           <tr>
-            <th>品名</th>
+            <th>品名 / 說明</th>
             <th>料號</th>
             <th style="text-align:center">數量</th>
           </tr>
@@ -412,9 +412,12 @@
     document.getElementById('bomDetailItems').innerHTML = items.length
       ? items.map(it => `
         <tr>
-          <td style="padding:8px 10px;font-size:13px;font-weight:600">${escHtml(it.name_zh||'')}</td>
-          <td style="padding:8px 10px;font-size:11px;color:#888;font-family:monospace">${escHtml(it.catalog_number||'')}</td>
-          <td style="padding:8px 10px;font-size:12px;color:#555;text-align:center">×${it.quantity}</td>
+          <td style="padding:8px 10px">
+            <div style="font-size:13px;font-weight:600;color:#1A1A2E">${escHtml(it.name_zh||'')}</div>
+            ${it.description ? `<div style="font-size:11px;color:#777;margin-top:3px;line-height:1.5">${escHtml(it.description)}</div>` : ''}
+          </td>
+          <td style="padding:8px 10px;font-size:11px;color:#888;font-family:monospace;white-space:nowrap">${escHtml(it.catalog_number||'')}</td>
+          <td style="padding:8px 10px;font-size:12px;color:#555;text-align:center;white-space:nowrap">×${it.quantity}</td>
         </tr>`).join('')
       : '<tr><td colspan="3" style="color:#AAA;padding:12px">此 BOM 尚無品項</td></tr>';
   }
