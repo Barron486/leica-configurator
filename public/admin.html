@@ -110,7 +110,7 @@
     <button class="tab-btn" id="tab-btn-approvals" onclick="switchTab('approvals')">🔐 審批人員</button>
     <button class="tab-btn" id="tab-btn-import" onclick="switchTab('import')">📥 匯入產品</button>
     <button class="tab-btn" id="tab-btn-pm-import" onclick="switchTab('pm-import')">📤 PM 批次維護</button>
-    <button class="tab-btn" onclick="switchTab('catalog')">🗂️ 目錄管理</button>
+    <!-- 目錄管理已整合到 BOM 管理 -->
     <button class="tab-btn" id="tab-btn-customers" onclick="switchTab('customers')">👥 客戶管理</button>
     <button class="tab-btn" id="tab-btn-settings" style="display:none" onclick="switchTab('settings')">⚙️ 系統設定</button>
   </div>
@@ -233,6 +233,15 @@
 
   <!-- Tab: BOM -->
   <div id="tab-bom" class="tab-panel">
+    <!-- 大類管理（從目錄管理整合）-->
+    <div class="card" style="margin-bottom:16px">
+      <div class="flex-between" style="margin-bottom:12px">
+        <strong style="font-size:13px">🗂️ 大類管理</strong>
+        <button class="btn btn-outline btn-sm" onclick="openInstrCatModal()">+ 新增大類</button>
+      </div>
+      <div id="instrCatList" style="display:flex; flex-wrap:wrap; gap:8px"></div>
+    </div>
+
     <div class="flex-between" style="margin-bottom:16px">
       <strong>BOM 物料清單管理</strong>
       <button class="btn btn-primary btn-sm" onclick="openAddBom()">+ 新增 BOM</button>
@@ -505,39 +514,9 @@
   </div>
 
   <!-- Tab: Catalog Items -->
-  <div id="tab-catalog" class="tab-panel">
-
-    <!-- 大類管理 -->
-    <div class="card" style="margin-bottom:16px">
-      <div class="flex-between" style="margin-bottom:12px">
-        <strong style="font-size:13px">🗂️ 大類管理</strong>
-        <button class="btn btn-outline btn-sm" onclick="openInstrCatModal()">+ 新增大類</button>
-      </div>
-      <div id="instrCatList" style="display:flex; flex-wrap:wrap; gap:8px"></div>
-    </div>
-
-    <!-- 目錄項目 -->
-    <div class="flex-between" style="margin-bottom:16px">
-      <strong>產品目錄管理</strong>
-      <button class="btn btn-primary btn-sm" onclick="openAddCatalogItem()">+ 新增項目</button>
-    </div>
-    <div class="card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>名稱</th>
-            <th>大類</th>
-            <th>子類別</th>
-            <th>簡短說明</th>
-            <th>狀態</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody id="catalogBody">
-          <tr><td colspan="6" class="text-muted">載入中…</td></tr>
-        </tbody>
-      </table>
-    </div>
+  <!-- tab-catalog 已整合至 BOM 管理，此處保留 DOM 節點供 JS 相容 -->
+  <div id="tab-catalog" class="tab-panel" style="display:none!important">
+    <tbody id="catalogBody"></tbody>
   </div>
 
   <!-- Tab: Customers -->

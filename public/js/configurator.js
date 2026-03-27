@@ -427,6 +427,17 @@ function changeCartQty(id, delta) {
 }
 
 // ── Custom items ──────────────────────────────────────────────
+// ── 全清購物車 ────────────────────────────────────────────────
+function clearCart() {
+  if (!confirm('確定清除所有配置品項？')) return;
+  extraSelected.clear();
+  customItems = [];
+  customPrices.clear();
+  autoDeps.clear();
+  renderProducts();
+  renderSummary();
+}
+
 function addCustomItem() {
   const nameEl  = document.getElementById('customItemName');
   const catEl   = document.getElementById('customItemCatalog');
@@ -490,14 +501,16 @@ function renderSummary() {
 
   const tbody      = document.getElementById('summaryItems');
   const priceBlock = document.getElementById('priceBlock');
-  const btnSubmit  = document.getElementById('btnSubmit');
-  const btnPreview = document.getElementById('btnPreview');
+  const btnSubmit   = document.getElementById('btnSubmit');
+  const btnPreview  = document.getElementById('btnPreview');
+  const btnClear    = document.getElementById('btnClearCart');
 
   if (!hasItems) {
     tbody.innerHTML = '<tr><td colspan="2" class="text-muted">尚未選擇產品</td></tr>';
     priceBlock.style.display = 'none';
     if (btnSubmit)  btnSubmit.disabled  = true;
     if (btnPreview) btnPreview.disabled = true;
+    if (btnClear)   btnClear.disabled   = true;
     return;
   }
 
@@ -581,6 +594,7 @@ function renderSummary() {
   priceBlock.style.display = 'block';
   if (btnSubmit)  btnSubmit.disabled  = false;
   if (btnPreview) btnPreview.disabled = false;
+  if (btnClear)   btnClear.disabled   = false;
 }
 
 // ── Quote Modal ───────────────────────────────────────────────

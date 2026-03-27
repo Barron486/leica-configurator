@@ -153,7 +153,7 @@
       <div class="eyebrow" style="margin-bottom:6px">Select a product to configure</div>
       <h2>選擇產品</h2>
     </div>
-    <div style="font-size:12px; color:#AAA; font-style:italic">點選可用產品以進入配置報價</div>
+    <div style="font-size:12px; color:#AAA; font-style:italic">點選可用產品查看詳情並加入購物車</div>
   </div>
 
   <!-- 動態大類區塊（由 JS 渲染） -->
@@ -164,6 +164,36 @@
     </div><!-- /main-content -->
   </div><!-- /main-area -->
 </div><!-- /app-shell -->
+
+<!-- BOM Detail Modal -->
+<div id="bomDetailModal" class="modal-overlay">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3 id="bomDetailName">產品詳情</h3>
+      <button class="modal-close" onclick="document.getElementById('bomDetailModal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="bomDetailDesc" style="font-size:13px;color:#666;margin-bottom:16px"></p>
+      <div style="font-size:11px;font-weight:700;color:#E3001B;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">配置品項清單</div>
+      <table class="data-table" style="margin:0">
+        <thead>
+          <tr>
+            <th>品名</th>
+            <th>料號</th>
+            <th style="text-align:center">數量</th>
+          </tr>
+        </thead>
+        <tbody id="bomDetailItems">
+          <tr><td colspan="3" style="color:#AAA">載入中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="document.getElementById('bomDetailModal').classList.remove('open')">關閉</button>
+      <button class="btn btn-red" id="bomDetailBtn">加入購物車 →</button>
+    </div>
+  </div>
+</div>
 
 <script src="/js/auth.js"></script>
 <script>
@@ -261,7 +291,7 @@
       if (cardBody) cardBody.appendChild(block);
     }
     const grid = document.getElementById('grid-dp-' + safeKey);
-    if (grid) appendProductCard(grid, b.name, b.short_description, status, url);
+    if (grid) appendProductCard(grid, b.name, b.short_description, status, url, b.id);
   }
 
   // 通用大類：每個大類建立獨立 section card
@@ -269,7 +299,7 @@
     ensureCatSection(b.instrument_category, catInfo);
     const gridId = 'grid-' + b.instrument_category;
     const grid = document.getElementById(gridId);
-    if (grid) appendProductCard(grid, b.name, b.short_description, status, url);
+    if (grid) appendProductCard(grid, b.name, b.short_description, status, url, b.id);
   }
 
   // 確保 section card 存在
@@ -321,27 +351,29 @@
     container.appendChild(sectionBlock);
   }
 
-  function appendProductCard(grid, name, shortDesc, status, url) {
+  // bomId → { name, short_description, url } for modal use
+  const _bomMeta = {};
+
+  function appendProductCard(grid, name, shortDesc, status, url, bomId) {
+    if (bomId) _bomMeta[bomId] = { name, short_description: shortDesc, url };
     const a = document.createElement('a');
-    if (status === 'available') {
-      a.className = 'product-card';
-      a.href = url || '/index.html';
-    } else {
-      a.className = 'product-card coming-soon';
+    a.className = status === 'available' ? 'product-card' : 'product-card coming-soon';
+    if (status === 'available' && bomId) {
+      a.href = '#';
+      a.onclick = (e) => { e.preventDefault(); openBomModal(bomId); };
     }
-    // 名稱永遠在最上方
+
     const nameEl = document.createElement('div');
     nameEl.className = 'product-name';
     nameEl.textContent = name;
     a.appendChild(nameEl);
-    // 描述在名稱下方（反灰）
+
     if (shortDesc) {
       const desc = document.createElement('div');
       desc.style.cssText = 'font-size:11px;color:#999;margin-top:4px;line-height:1.4';
       desc.textContent = shortDesc;
       a.appendChild(desc);
     }
-    // 僅 coming soon 顯示 badge，已啟用不顯示
     if (status !== 'available') {
       const badge = document.createElement('span');
       badge.className = 'product-badge badge-coming';
@@ -349,8 +381,47 @@
       badge.style.marginTop = '6px';
       badge.style.display = 'inline-block';
       a.appendChild(badge);
+    } else {
+      const hint = document.createElement('div');
+      hint.style.cssText = 'font-size:10px;color:#005FAE;margin-top:8px;font-weight:600';
+      hint.textContent = '查看詳情 →';
+      a.appendChild(hint);
     }
     grid.appendChild(a);
+  }
+
+  async function openBomModal(bomId) {
+    const meta = _bomMeta[bomId] || {};
+    const modal = document.getElementById('bomDetailModal');
+    document.getElementById('bomDetailName').textContent = meta.name || '';
+    document.getElementById('bomDetailDesc').textContent = meta.short_description || '';
+    document.getElementById('bomDetailItems').innerHTML = '<tr><td colspan="3" style="color:#AAA;padding:12px">載入中…</td></tr>';
+    document.getElementById('bomDetailBtn').onclick = () => { window.location.href = `/index.html?bom=${bomId}`; };
+    modal.classList.add('open');
+
+    const token = localStorage.getItem('token');
+    const res = await fetch(`/api/admin/boms/${bomId}/config`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!res.ok) {
+      document.getElementById('bomDetailItems').innerHTML = '<tr><td colspan="3" style="color:#DC3545;padding:12px">載入失敗</td></tr>';
+      return;
+    }
+    const { items } = await res.json();
+    const catLabels = typeof CATEGORY_LABELS !== 'undefined' ? CATEGORY_LABELS : {};
+    document.getElementById('bomDetailItems').innerHTML = items.length
+      ? items.map(it => `
+        <tr>
+          <td style="padding:8px 10px;font-size:13px;font-weight:600">${escHtml(it.name_zh||'')}</td>
+          <td style="padding:8px 10px;font-size:11px;color:#888;font-family:monospace">${escHtml(it.catalog_number||'')}</td>
+          <td style="padding:8px 10px;font-size:12px;color:#555;text-align:center">×${it.quantity}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="3" style="color:#AAA;padding:12px">此 BOM 尚無品項</td></tr>';
+  }
+
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 </script>
 </body>

@@ -98,7 +98,7 @@ function switchTab(name) {
   if (name === 'roleperms') loadRolePermissions();
   if (name === 'bom')       { loadInstrCats(); loadBoms(); }
   if (name === 'approvals') loadChain();
-  if (name === 'catalog')   { loadInstrCats(); loadCatalogItems(); }
+  // catalog tab 已整合至 bom，此處保留相容
   if (name === 'customers') loadCustomers();
   if (name === 'settings')  loadApiSettings();
 }
