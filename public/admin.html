@@ -74,10 +74,12 @@
       </div>
 
       <div class="sidebar-section-label" style="padding-top:16px">⚗ 實驗功能</div>
-      <button class="sidebar-link sidebar-link-btn" id="themeToggle" onclick="toggleTheme()">
-        <span class="sidebar-link-icon" id="themeIcon">🌙</span>深色模式
-        <span class="exp-badge">BETA</span>
-      </button>
+      <label class="theme-switch">
+        <span class="sidebar-link-icon" id="themeIcon">🌙</span>
+        深色模式
+        <input type="checkbox" id="themeToggleInput" onchange="toggleTheme()">
+        <span class="theme-switch-track"></span>
+      </label>
     </div>
 
     <div class="sidebar-divider"></div>
