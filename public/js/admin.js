@@ -1561,7 +1561,7 @@ async function removeDependency(depId) {
 let _pmPreviewData = null;
 
 function downloadPmTemplate() {
-  const token = localStorage.getItem('leica_token');
+  const token = localStorage.getItem('token');
   const a = document.createElement('a');
   a.href = '/api/admin/pm-import/template';
   // 帶 token：用臨時 fetch 下載

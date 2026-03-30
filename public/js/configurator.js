@@ -991,11 +991,11 @@ function renderInvoice() {
             <div style="display:flex; align-items:baseline; gap:10px">
               <span style="font-size:21px; font-weight:900; letter-spacing:0.5px; color:#1A1A2E">正茂生物科技</span>
               <span style="width:1px; height:16px; background:#CCC; display:inline-block; vertical-align:middle"></span>
-              <span style="font-size:11px; color:#E3001B; font-weight:700; letter-spacing:1px">LEICA</span>
-              <span style="font-size:10px; color:#888; letter-spacing:0.3px">Authorized Distributor</span>
+              <span style="font-size:11px; color:#E3001B; font-weight:700; letter-spacing:1px">GENMALL</span>
+              <span style="font-size:10px; color:#888; letter-spacing:0.3px">Biotech</span>
             </div>
             <div style="font-size:11.5px; color:#666; margin-top:5px">
-              GENMALL BIOTECH CO., LTD. &nbsp;·&nbsp; 台灣 Leica Biosystems 授權代理商
+              GENMALL BIOTECH CO., LTD. &nbsp;·&nbsp; 正茂生物科技
             </div>
           </div>
 
@@ -1029,7 +1029,7 @@ function renderInvoice() {
         <!-- 產品說明 -->
         <div style="padding:18px 36px; background:#FAFAFA">
           <div style="font-size:10px; font-weight:700; color:#E3001B; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:8px">配 置 產 品</div>
-          <div style="font-size:14px; font-weight:700; color:#1A1A2E">Leica Biosystems</div>
+          <div style="font-size:14px; font-weight:700; color:#1A1A2E">正茂生物科技</div>
           <div style="font-size:12px; color:#666; margin-top:3px">產品選購配置方案</div>
           <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap">
             <span style="background:#E8F0FE; color:#1565C0; font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px">
@@ -1113,8 +1113,8 @@ function renderInvoice() {
         <!-- 頁尾品牌條 -->
         <div style="background:#1A1A2E; padding:10px 36px; display:flex; justify-content:space-between; align-items:center">
           <div style="font-size:11px; font-weight:700; color:white; letter-spacing:2px">
-            LEICA<span style="color:#E3001B">.</span>
-            <span style="font-weight:300; letter-spacing:0.5px; margin-left:6px; font-size:10px">Biosystems</span>
+            GENMALL<span style="color:#E3001B">.</span>
+            <span style="font-weight:300; letter-spacing:0.5px; margin-left:6px; font-size:10px">Quote & Config</span>
           </div>
           <div style="font-size:10px; color:rgba(255,255,255,0.4)">正茂生物科技 · GENMALL BIOTECH</div>
         </div>
