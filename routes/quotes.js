@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb } = require('../database/schema');
 const nodemailer = require('nodemailer');
+const { logAudit, getIp } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -191,6 +192,7 @@ router.post('/', (req, res) => {
   }
 
   db.close();
+  logAudit({ userId: req.user.id, username: req.user.username, role: req.user.role, action: 'create_quote', resource: 'quotes', resourceId: quoteId, detail: { quote_number: quoteNumber, customer: customer_name }, ip: getIp(req) });
   res.status(201).json({ quote_number: quoteNumber, id: quoteId });
 });
 
@@ -280,6 +282,7 @@ router.put('/:id/submit', async (req, res) => {
   }
 
   db.close();
+  logAudit({ userId: req.user.id, username: req.user.username, role: req.user.role, action: 'submit_quote', resource: 'quotes', resourceId: quote.id, detail: { quote_number: quote.quote_number, status: newStatus }, ip: getIp(req) });
 
   // 非同步發送 email（不阻塞回應）
   for (const ap of approvers) {
@@ -308,6 +311,7 @@ router.put('/:id/withdraw', (req, res) => {
 
   db.prepare('UPDATE quotes SET status=?, submitted_at=NULL WHERE id=?').run('draft', req.params.id);
   db.close();
+  logAudit({ userId: req.user.id, username: req.user.username, role: req.user.role, action: 'withdraw_quote', resource: 'quotes', resourceId: quote.id, detail: { quote_number: quote.quote_number }, ip: getIp(req) });
   res.json({ message: '報價單已撤回，可重新修改後提交' });
 });
 
@@ -353,6 +357,7 @@ router.put('/:id/approve', (req, res) => {
     db.close();
   }
 
+  logAudit({ userId, username: req.user.username, role, action: 'approve_quote', resource: 'quotes', resourceId: quote.id, detail: { quote_number: quote.quote_number, next_status: nextStatus, admin_notes }, ip: getIp(req) });
   const msgs = { pending_gm:'PM 已核准，報價單需總經理審核', submitted:'已核准，待管理部用印', approved:'報價單已核准' };
   res.json({ message: msgs[nextStatus] || '已核准', status: nextStatus });
 });
@@ -380,6 +385,7 @@ router.put('/:id/reject', (req, res) => {
     db.close();
   }
 
+  logAudit({ userId, username: req.user.username, role, action: 'reject_quote', resource: 'quotes', resourceId: quote.id, detail: { quote_number: quote.quote_number, admin_notes }, ip: getIp(req) });
   res.json({ message: '報價單已退回' });
 });
 
@@ -395,6 +401,7 @@ router.delete('/:id', (req, res) => {
   }
   db.prepare('DELETE FROM quotes WHERE id=?').run(req.params.id);
   db.close();
+  logAudit({ userId, username: req.user.username, role, action: 'delete_quote', resource: 'quotes', resourceId: quote.id, detail: { quote_number: quote.quote_number, status: quote.status }, ip: getIp(req) });
   res.json({ message: '已刪除' });
 });
 

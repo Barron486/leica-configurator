@@ -51,11 +51,13 @@ async function applyRolePermTabs(user) {
   const isAdmin = ADMIN_ONLY_ROLES.includes(user.role);
 
   if (isAdmin) {
-    // admin/super_admin 全部顯示；僅 super_admin 顯示系統設定 tab
+    // admin/super_admin 全部顯示；僅 super_admin 顯示系統設定 + 稽核日誌 tab
     document.querySelectorAll('.tab-btn').forEach(btn => btn.style.display = '');
     if (user.role !== 'super_admin') {
-      const settingsBtn = document.getElementById('tab-btn-settings');
-      if (settingsBtn) settingsBtn.style.display = 'none';
+      ['tab-btn-settings', 'tab-btn-audit'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.style.display = 'none';
+      });
     }
     return;
   }
@@ -101,6 +103,7 @@ function switchTab(name) {
   // catalog tab 已整合至 bom，此處保留相容
   if (name === 'customers') loadCustomers();
   if (name === 'settings')  loadApiSettings();
+  if (name === 'audit')     initAuditTab();
 }
 
 // ── Quotes ────────────────────────────────────────────────────
@@ -1713,4 +1716,108 @@ function resetPmImport() {
   document.getElementById('pmStep2').style.display = 'none';
   document.getElementById('pmStep3').style.display = 'none';
   document.getElementById('pmUploadProgress').style.display = 'none';
+}
+
+// ── Audit Log (super_admin only) ─────────────────────────────
+async function initAuditTab() {
+  // 載入動作類型下拉
+  const res = await apiFetch('/api/admin/audit/actions');
+  if (res && res.ok) {
+    const actions = await res.json();
+    const sel = document.getElementById('auditFilterAction');
+    if (sel) {
+      sel.innerHTML = '<option value="">全部</option>' +
+        actions.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+    }
+  }
+  loadAuditLogs();
+}
+
+async function loadAuditLogs() {
+  const action   = document.getElementById('auditFilterAction')?.value  || '';
+  const resource = document.getElementById('auditFilterResource')?.value || '';
+  const username = document.getElementById('auditFilterUser')?.value     || '';
+  const from     = document.getElementById('auditFilterFrom')?.value     || '';
+  const to       = document.getElementById('auditFilterTo')?.value       || '';
+
+  const params = new URLSearchParams({ limit: 200 });
+  if (action)   params.set('action', action);
+  if (resource) params.set('resource', resource);
+  if (username) params.set('username', username);
+  if (from)     params.set('from', from);
+  if (to)       params.set('to', to);
+
+  const res = await apiFetch('/api/admin/audit?' + params.toString());
+  if (!res || !res.ok) return;
+  const { total, rows } = await res.json();
+
+  document.getElementById('auditTotal').textContent = `共 ${total} 筆${total > 200 ? '（顯示最新 200 筆）' : ''}`;
+
+  const ACTION_LABELS = {
+    login: '登入', login_failed: '登入失敗', login_blocked: '帳號鎖定',
+    create_quote: '建立報價單', submit_quote: '提交報價單',
+    approve_quote: '核准報價單', reject_quote: '退回報價單',
+    withdraw_quote: '撤回報價單', delete_quote: '刪除報價單',
+    create_user: '新增用戶', update_user: '更新用戶',
+    update_pricing: '更新定價',
+  };
+  const ACTION_COLORS = {
+    login: '#155724', login_failed: '#721C24', login_blocked: '#721C24',
+    approve_quote: '#155724', reject_quote: '#721C24', delete_quote: '#721C24',
+    create_quote: '#1565C0', submit_quote: '#1565C0',
+  };
+
+  const tbody = document.getElementById('auditBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-muted">無符合記錄</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => {
+    const color = ACTION_COLORS[r.action] || '#333';
+    let detailText = '';
+    try {
+      const obj = r.detail ? JSON.parse(r.detail) : null;
+      detailText = obj ? Object.entries(obj).map(([k,v]) => `${k}: ${v}`).join('　') : '';
+    } catch { detailText = r.detail || ''; }
+
+    return `<tr>
+      <td style="font-size:11px;color:#888;white-space:nowrap">${r.created_at?.replace('T',' ').slice(0,19) || ''}</td>
+      <td style="font-size:12px;font-weight:600">${esc(r.username||'')}</td>
+      <td style="font-size:11px;color:#555">${esc(r.role||'')}</td>
+      <td><span style="font-size:11px;font-weight:700;color:${color}">${esc(ACTION_LABELS[r.action]||r.action)}</span></td>
+      <td style="font-size:11px;color:#888">${esc(r.resource||'')}</td>
+      <td style="font-size:11px;color:#888;text-align:center">${esc(r.resource_id||'')}</td>
+      <td style="font-size:11px;color:#666;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(detailText)}">${esc(detailText)}</td>
+      <td style="font-size:11px;color:#AAA;font-family:monospace">${esc(r.ip||'')}</td>
+    </tr>`;
+  }).join('');
+}
+
+function exportAuditCsv() {
+  const action   = document.getElementById('auditFilterAction')?.value  || '';
+  const resource = document.getElementById('auditFilterResource')?.value || '';
+  const username = document.getElementById('auditFilterUser')?.value     || '';
+  const from     = document.getElementById('auditFilterFrom')?.value     || '';
+  const to       = document.getElementById('auditFilterTo')?.value       || '';
+
+  const params = new URLSearchParams({ format: 'csv', limit: 1000 });
+  if (action)   params.set('action', action);
+  if (resource) params.set('resource', resource);
+  if (username) params.set('username', username);
+  if (from)     params.set('from', from);
+  if (to)       params.set('to', to);
+
+  const token = localStorage.getItem('token');
+  // 用 fetch 下載（帶 Authorization header）
+  fetch('/api/admin/audit?' + params.toString(), {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(r => r.blob()).then(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 }

@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const XLSX = require('xlsx');
 const { getDb } = require('../database/schema');
+const { logAudit, getIp } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -217,6 +218,7 @@ router.put('/pricing/:product_id', perm('manage_pricing'), (req, res) => {
     currency || 'TWD', notes || '', req.params.product_id
   );
   db.close();
+  logAudit({ userId: req.user.id, username: req.user.username, role: req.user.role, action: 'update_pricing', resource: 'pricing', resourceId: req.params.product_id, detail: { suggested_price, retail_price, cost_price }, ip: getIp(req) });
   res.json({ message: '價格已更新' });
 });
 
@@ -237,6 +239,7 @@ router.post('/users', perm('manage_users'), (req, res) => {
     const result = db.prepare('INSERT INTO users (username, password_hash, role, display_name, email, quote_prefix) VALUES (?,?,?,?,?,?)')
       .run(username, hash, role, display_name || username, email || '', (quote_prefix || '').toUpperCase());
     db.close();
+    logAudit({ userId: req.user.id, username: req.user.username, role: req.user.role, action: 'create_user', resource: 'users', resourceId: result.lastInsertRowid, detail: { username, role }, ip: getIp(req) });
     res.status(201).json({ id: result.lastInsertRowid });
   } catch (e) {
     db.close();
@@ -257,6 +260,7 @@ router.put('/users/:id', perm('manage_users'), (req, res) => {
       .run(role, display_name, email, prefix, req.params.id);
   }
   db.close();
+  logAudit({ userId: req.user.id, username: req.user.username, role: req.user.role, action: 'update_user', resource: 'users', resourceId: req.params.id, detail: { role, display_name, changed_password: !!password }, ip: getIp(req) });
   res.json({ message: '已更新' });
 });
 

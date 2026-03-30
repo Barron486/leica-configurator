@@ -558,6 +558,25 @@ function _migrate(db) {
       console.log('Migration 16: api_settings table ready');
     } catch(e) { console.error('Migration 16 error:', e.message); }
 
+    // 21. audit_logs 稽核日誌
+    try {
+      db.exec(`CREATE TABLE IF NOT EXISTS audit_logs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+        user_id     INTEGER,
+        username    TEXT,
+        role        TEXT,
+        action      TEXT NOT NULL,
+        resource    TEXT,
+        resource_id TEXT,
+        detail      TEXT,
+        ip          TEXT
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_user    ON audit_logs(user_id)`);
+      console.log('Migration 21: audit_logs table ready');
+    } catch(e) { console.error('Migration 21 error:', e.message); }
+
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }

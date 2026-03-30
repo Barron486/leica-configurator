@@ -113,6 +113,7 @@
     <!-- 目錄管理已整合到 BOM 管理 -->
     <button class="tab-btn" id="tab-btn-customers" onclick="switchTab('customers')">👥 客戶管理</button>
     <button class="tab-btn" id="tab-btn-settings" style="display:none" onclick="switchTab('settings')">⚙️ 系統設定</button>
+    <button class="tab-btn" id="tab-btn-audit" style="display:none" onclick="switchTab('audit')">🔍 稽核日誌</button>
   </div>
 
   <!-- Tab: Quotes -->
@@ -627,6 +628,68 @@
         <div style="font-size:3rem">✅</div>
         <h3 id="custImportResult" style="margin:12px 0 8px; color:#2E7D32"></h3>
         <button class="btn btn-primary" style="margin-top:16px" onclick="hideCustImport()">返回客戶列表</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Audit Log (super_admin only) -->
+  <div id="tab-audit" class="tab-panel">
+    <!-- 過濾列 -->
+    <div class="card" style="margin-bottom:12px;padding:14px 16px">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+        <div>
+          <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">動作類型</label>
+          <select id="auditFilterAction" style="padding:6px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px">
+            <option value="">全部</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">資源</label>
+          <select id="auditFilterResource" style="padding:6px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px">
+            <option value="">全部</option>
+            <option value="auth">登入認證</option>
+            <option value="quotes">報價單</option>
+            <option value="users">用戶管理</option>
+            <option value="pricing">定價</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">用戶名稱</label>
+          <input id="auditFilterUser" type="text" placeholder="搜尋用戶…" style="padding:6px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px;width:140px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">開始日期</label>
+          <input id="auditFilterFrom" type="date" style="padding:6px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">結束日期</label>
+          <input id="auditFilterTo" type="date" style="padding:6px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="loadAuditLogs()">🔍 查詢</button>
+        <button class="btn btn-outline btn-sm" onclick="exportAuditCsv()">⬇ 匯出 CSV</button>
+      </div>
+    </div>
+
+    <div class="card" style="padding:0">
+      <div style="padding:10px 16px;border-bottom:1px solid #EEE;font-size:12px;color:#888" id="auditTotal">共 0 筆</div>
+      <div style="overflow-x:auto">
+        <table class="data-table" style="min-width:800px">
+          <thead>
+            <tr>
+              <th style="width:150px">時間</th>
+              <th style="width:100px">用戶</th>
+              <th style="width:80px">角色</th>
+              <th style="width:140px">動作</th>
+              <th style="width:80px">資源</th>
+              <th style="width:70px">資源ID</th>
+              <th>詳情</th>
+              <th style="width:100px">IP</th>
+            </tr>
+          </thead>
+          <tbody id="auditBody">
+            <tr><td colspan="8" class="text-muted">請按查詢載入</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

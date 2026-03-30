@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt  = require('bcryptjs');
 const jwt     = require('jsonwebtoken');
 const { getDb } = require('../database/schema');
+const { logAudit, getIp } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -41,11 +42,13 @@ router.post('/login', (req, res) => {
 
   if (!valid) {
     attempts.count += 1;
+    logAudit({ username, action: 'login_failed', resource: 'auth', detail: { reason: '帳號或密碼錯誤' }, ip: getIp(req) });
     // 連續失敗 5 次 → 鎖定 15 分鐘
     if (attempts.count >= 5) {
       attempts.blockedUntil = Date.now() + 15 * 60 * 1000;
       attempts.count = 0;
       loginAttempts.set(key, attempts);
+      logAudit({ username, action: 'login_blocked', resource: 'auth', detail: { reason: '失敗次數過多，鎖定15分鐘' }, ip: getIp(req) });
       return res.status(429).json({ error: '失敗次數過多，帳號已鎖定 15 分鐘' });
     }
     loginAttempts.set(key, attempts);
@@ -54,6 +57,7 @@ router.post('/login', (req, res) => {
 
   // 登入成功 → 清除失敗記錄
   loginAttempts.delete(key);
+  logAudit({ userId: user.id, username: user.username, role: user.role, action: 'login', resource: 'auth', ip: getIp(req) });
 
   const token = jwt.sign(
     { id: user.id, username: user.username, role: user.role, display_name: user.display_name },
