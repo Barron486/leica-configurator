@@ -577,6 +577,22 @@ function _migrate(db) {
       console.log('Migration 21: audit_logs table ready');
     } catch(e) { console.error('Migration 21 error:', e.message); }
 
+    // 22. 效能索引
+    try {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_quotes_sales_user  ON quotes(sales_user_id);
+        CREATE INDEX IF NOT EXISTS idx_quotes_status       ON quotes(status);
+        CREATE INDEX IF NOT EXISTS idx_quote_items_quote   ON quote_items(quote_id);
+        CREATE INDEX IF NOT EXISTS idx_quote_items_product ON quote_items(product_id);
+        CREATE INDEX IF NOT EXISTS idx_pricing_product     ON pricing(product_id);
+        CREATE INDEX IF NOT EXISTS idx_products_active     ON products(active);
+        CREATE INDEX IF NOT EXISTS idx_products_pm         ON products(pm_user_id);
+        CREATE INDEX IF NOT EXISTS idx_notifications_user  ON notifications(user_id);
+        CREATE INDEX IF NOT EXISTS idx_notifications_read  ON notifications(user_id, read);
+      `);
+      console.log('Migration 22: performance indexes created');
+    } catch(e) { console.error('Migration 22 error:', e.message); }
+
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }
