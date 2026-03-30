@@ -7,7 +7,7 @@
   <title>管理後台 — GQC</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=3">
   <style>
     /* ── Mobile responsive ── */
     @media (max-width: 768px) {
@@ -74,12 +74,11 @@
       </div>
 
       <div class="sidebar-section-label" style="padding-top:16px">⚗ 實驗功能</div>
-      <label class="theme-switch">
+      <button type="button" class="sidebar-link theme-switch" onclick="toggleTheme()">
         <span class="sidebar-link-icon" id="themeIcon">🌙</span>
         深色模式
-        <input type="checkbox" id="themeToggleInput" onchange="toggleTheme()">
-        <span class="theme-switch-track"></span>
-      </label>
+        <span class="theme-switch-track"><span class="theme-switch-thumb"></span></span>
+      </button>
     </div>
 
     <div class="sidebar-divider"></div>

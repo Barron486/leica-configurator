@@ -825,51 +825,43 @@ hr { border: none; border-top: 1px solid rgba(26,26,46,0.08); margin: 16px 0; }
   flex-shrink: 0;
 }
 
-/* iOS-style toggle switch inside sidebar-link */
+/* Button reset — allows .sidebar-link style on a <button> */
 .theme-switch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: var(--r-md);
+  background: none;
+  border: none;
   cursor: pointer;
-  color: rgba(255,255,255,0.50);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  margin-bottom: 2px;
-  user-select: none;
-  transition: all 0.12s;
+  font-family: inherit;
+  width: 100%;
+  text-align: left;
 }
-.theme-switch:hover {
-  background: rgba(255,255,255,0.07);
-  color: rgba(255,255,255,0.88);
-}
-.theme-switch input[type="checkbox"] { display: none; }
+
+/* Toggle track (right-aligned inside flex row) */
 .theme-switch-track {
   position: relative;
   width: 30px;
   height: 17px;
-  background: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.20);
   border-radius: 9px;
-  transition: background 0.22s;
-  flex-shrink: 0;
   margin-left: auto;
+  flex-shrink: 0;
+  transition: background 0.22s;
+  display: inline-block;
 }
-.theme-switch-track::after {
-  content: '';
+/* Thumb */
+.theme-switch-thumb {
   position: absolute;
   top: 2px;
   left: 2px;
   width: 13px;
   height: 13px;
-  background: rgba(255,255,255,0.75);
   border-radius: 50%;
-  transition: transform 0.22s, background 0.22s;
+  background: rgba(255,255,255,0.80);
   box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+  transition: transform 0.22s, background 0.22s;
 }
-.theme-switch input:checked + .theme-switch-track { background: #3B82F6; }
-.theme-switch input:checked + .theme-switch-track::after {
+/* Dark state — driven by data-theme, no JS class needed */
+[data-theme="dark"] .theme-switch-track { background: #3B82F6; }
+[data-theme="dark"] .theme-switch-thumb {
   transform: translateX(13px);
   background: white;
 }
