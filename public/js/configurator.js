@@ -274,12 +274,12 @@ function renderProducts() {
         placeholder="搜尋品名、料號…"
         value="${escHtml(_cartSearch)}"
         oninput="_cartSearch=this.value; renderProducts()"
-        style="flex:1;min-width:160px;padding:7px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px"
+        class="filter-input"
       >
       <select
         id="catFilter"
         onchange="_cartCatFilter=this.value; renderProducts()"
-        style="padding:7px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px;background:#FFF"
+        class="filter-select"
       >
         <option value="" ${!catFilter ? 'selected' : ''}>全部類別</option>
         ${catOptions}
@@ -309,7 +309,7 @@ function renderProducts() {
       if (isAutoDep) {
         // 自動帶入品項
         const qty = autoDeps.get(p.id);
-        html += `<div class="product-item selected" style="opacity:0.85;background:#F0F4FF">
+        html += `<div class="product-item selected product-item--auto" style="opacity:0.85">
           <div class="product-info">
             <div class="product-name">${escHtml(p.name_zh)} <span style="color:#5B8DEF;font-size:10px;font-weight:600">⬡ 自動帶入</span></div>
             <div class="product-code">${escHtml(p.catalog_number)}</div>
@@ -402,7 +402,7 @@ function renderBomProducts(container) {
   const depItems  = products.filter(p => autoDeps.has(p.id) && !extraSelected.has(p.id));
 
   let html = `
-    <div style="background:#F0F4FF;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#1565C0;display:flex;align-items:center;gap:8px">
+    <div class="bom-banner">
       <span style="font-size:16px">📋</span>
       <span><strong>${escHtml(_bomName)}</strong> 配置品項清單。如需新增其他品項，請使用下方「手動新增自訂品項」。</span>
     </div>`;
@@ -433,7 +433,7 @@ function renderBomProducts(container) {
 
   for (const p of depItems) {
     const qty = autoDeps.get(p.id);
-    html += `<div class="product-item selected" style="opacity:0.85;background:#F0F4FF">
+    html += `<div class="product-item selected product-item--auto" style="opacity:0.85">
       <div class="product-info">
         <div class="product-name">${escHtml(p.name_zh)} <span style="color:#5B8DEF;font-size:10px;font-weight:600">⬡ 自動帶入</span></div>
         <div class="product-code">${escHtml(p.catalog_number)}</div>
@@ -780,10 +780,7 @@ async function doCustomerSearch(q) {
     return;
   }
   dd.innerHTML = _custSearchCache.map(c => `
-    <div onclick="selectCustomer(${c.id})" style="
-      padding:10px 16px; cursor:pointer; border-bottom:1px solid #F0F0F0;
-      display:flex; flex-direction:column; gap:2px;
-    " onmouseenter="this.style.background='#F5F9FF'" onmouseleave="this.style.background=''">
+    <div onclick="selectCustomer(${c.id})" class="cust-dropdown-item">
       <span style="font-weight:600;font-size:13px">${escHtml(c.name)}${c.org ? ' · ' + escHtml(c.org) : ''}</span>
       <span style="font-size:11px;color:#888">${[c.phone, c.email].filter(Boolean).join(' · ') || '（無聯絡資訊）'}</span>
     </div>
