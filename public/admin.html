@@ -72,13 +72,18 @@
           <span class="sidebar-link-icon">⚡</span>管理後台
         </a>
       </div>
+
+      <div class="sidebar-section-label" style="padding-top:16px">⚗ 實驗功能</div>
+      <button class="sidebar-link sidebar-link-btn" id="themeToggle" onclick="toggleTheme()">
+        <span class="sidebar-link-icon" id="themeIcon">🌙</span>深色模式
+        <span class="exp-badge">BETA</span>
+      </button>
     </div>
 
     <div class="sidebar-divider"></div>
     <div class="sidebar-user">
       <span id="userName" class="sidebar-username"></span>
       <span id="roleBadge" class="role-badge"></span>
-      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙 深色模式</button>
       <button class="sidebar-logout" onclick="logout()">登出</button>
     </div>
   </nav>

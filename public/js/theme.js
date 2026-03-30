@@ -9,8 +9,8 @@ function toggleTheme() {
 
 function _updateToggleLabel() {
   const theme = document.documentElement.getAttribute('data-theme') || 'light';
-  const btn = document.getElementById('themeToggle');
-  if (btn) btn.innerHTML = theme === 'dark' ? '☀ 淺色模式' : '🌙 深色模式';
+  const icon = document.getElementById('themeIcon');
+  if (icon) icon.textContent = theme === 'dark' ? '☀' : '🌙';
 }
 
 document.addEventListener('DOMContentLoaded', _updateToggleLabel);
