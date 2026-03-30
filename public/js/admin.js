@@ -162,7 +162,13 @@ async function openQuoteDetail(id) {
   `).join('');
 
   const isPendingGm = q.status === 'pending_gm';
-  const canReview = q.status === 'submitted' || (isPendingGm && ['admin','gm'].includes(_currentUser?.role));
+  const isPendingPm = q.status === 'pending_pm';
+  const isAdminUser = ['admin','super_admin'].includes(_currentUser?.role);
+  // admin/super_admin 可審核任何狀態；PM 可審核 pending_pm；GM 可審核 pending_gm；其他 REVIEWER_ROLES 可審核 submitted
+  const canReview = isAdminUser ||
+    (isPendingPm && _currentUser?.role === 'pm') ||
+    (isPendingGm && _currentUser?.role === 'gm') ||
+    (q.status === 'submitted' && REVIEWER_ROLES.includes(_currentUser?.role));
 
   document.getElementById('quoteDetailBody').innerHTML = `
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; font-size:13px">
@@ -176,6 +182,7 @@ async function openQuoteDetail(id) {
       <div><strong>提交：</strong>${q.submitted_at ? formatDate(q.submitted_at) : '—'}</div>
     </div>
     ${q.case_notes ? `<div style="background:#F0F4FF;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px"><strong>案件說明：</strong>${q.case_notes}</div>` : ''}
+    ${isPendingPm ? `<div class="alert" style="background:#E8F4FF;color:#0056A3;margin-bottom:12px;border-left:4px solid #0070CC">📋 此報價單包含 PM 負責的產品，需 PM 審核</div>` : ''}
     ${isPendingGm ? `<div class="alert" style="background:#FFF3CD;color:#856404;margin-bottom:12px;border-left:4px solid #FFC107">⚠ 此報價單包含低於最低售價的品項，需總經理審核</div>` : ''}
     <table class="data-table" style="margin-bottom:12px">
       <thead><tr><th>料號</th><th>品名</th><th>數量</th><th>單價</th></tr></thead>
@@ -207,7 +214,7 @@ async function openQuoteDetail(id) {
 
     const approveBtn = document.createElement('button');
     approveBtn.className = 'btn btn-primary';
-    approveBtn.textContent = isPendingGm ? '總經理核准' : '核准';
+    approveBtn.textContent = isPendingGm ? '總經理核准' : isPendingPm ? 'PM 核准' : '核准';
     approveBtn.style.cssText = 'background:#28A745; border-color:#28A745';
     approveBtn.onclick = () => reviewQuote(q.id, 'approved');
 
@@ -317,14 +324,22 @@ async function savePricing() {
 }
 
 // ── Products ──────────────────────────────────────────────────
+let _allProducts = [];
+
 async function loadProducts() {
   const res = await apiFetch('/api/admin/products');
   if (!res || !res.ok) return;
-  const products = await res.json();
+  _allProducts = await res.json();
+
+  // 重設全選狀態
+  const selectAll = document.getElementById('productSelectAll');
+  if (selectAll) selectAll.checked = false;
+  _updateProductBatchBar();
 
   const tbody = document.getElementById('productsBody');
-  tbody.innerHTML = products.map(p => `
-    <tr>
+  tbody.innerHTML = _allProducts.map(p => `
+    <tr data-pid="${p.id}">
+      <td style="text-align:center"><input type="checkbox" class="product-cb" value="${p.id}" onchange="_updateProductBatchBar()"></td>
       <td class="text-small">${p.catalog_number}</td>
       <td>${p.name_zh}</td>
       <td class="text-small text-muted">${CATEGORY_LABELS[p.category] || p.category}</td>
@@ -343,6 +358,110 @@ async function loadProducts() {
       </td>
     </tr>
   `).join('');
+}
+
+function toggleSelectAllProducts(checked) {
+  document.querySelectorAll('.product-cb').forEach(cb => cb.checked = checked);
+  _updateProductBatchBar();
+}
+
+function _getSelectedProductIds() {
+  return [...document.querySelectorAll('.product-cb:checked')].map(cb => parseInt(cb.value));
+}
+
+function _updateProductBatchBar() {
+  const ids = _getSelectedProductIds();
+  const bar = document.getElementById('productBatchBar');
+  const countEl = document.getElementById('productBatchCount');
+  if (!bar) return;
+  if (ids.length > 0) {
+    bar.style.display = 'flex';
+    countEl.textContent = `已選取 ${ids.length} 項`;
+    // 載入 PM 選項（批次用）
+    if (document.getElementById('batchPmSelect').options.length <= 1) {
+      _loadBatchPmOptions();
+    }
+  } else {
+    bar.style.display = 'none';
+  }
+  // 更新全選 checkbox 狀態
+  const all = document.querySelectorAll('.product-cb');
+  const checked = document.querySelectorAll('.product-cb:checked');
+  const selectAll = document.getElementById('productSelectAll');
+  if (selectAll) {
+    selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
+    selectAll.checked = all.length > 0 && checked.length === all.length;
+  }
+}
+
+async function _loadBatchPmOptions() {
+  if (_pmUsers.length === 0) {
+    const res = await apiFetch('/api/admin/users');
+    if (res && res.ok) {
+      const users = await res.json();
+      _pmUsers = users.filter(u => u.role === 'pm');
+    }
+  }
+  const sel = document.getElementById('batchPmSelect');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— 清除負責人 —</option>' +
+    _pmUsers.map(u => `<option value="${u.id}">${u.display_name} (${u.username})</option>`).join('');
+}
+
+async function batchSetCategory() {
+  const ids = _getSelectedProductIds();
+  if (!ids.length) return;
+  const cat = document.getElementById('batchCategorySelect').value;
+  if (!cat) { showToast('請選擇類別', 'error'); return; }
+  if (!confirm(`確定將 ${ids.length} 個產品的類別改為「${CATEGORY_LABELS[cat] || cat}」？`)) return;
+
+  let ok = 0;
+  for (const id of ids) {
+    const p = _allProducts.find(x => x.id === id);
+    if (!p) continue;
+    const res = await apiFetch(`/api/admin/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name_zh: p.name_zh, name_en: p.name_en||'', category: cat, description: p.description||'', notes: p.notes||'', sort_order: p.sort_order??99, pm_user_id: p.pm_user_id||null }),
+    });
+    if (res && res.ok) ok++;
+  }
+  showToast(`已更新 ${ok} 個產品的類別`, ok === ids.length ? 'success' : 'warning');
+  loadProducts();
+}
+
+async function batchSetPm() {
+  const ids = _getSelectedProductIds();
+  if (!ids.length) return;
+  const pmId = document.getElementById('batchPmSelect').value || null;
+  const pmName = pmId ? (_pmUsers.find(u => u.id == pmId)?.display_name || pmId) : '（清除）';
+  if (!confirm(`確定將 ${ids.length} 個產品的負責人設為「${pmName}」？`)) return;
+
+  let ok = 0;
+  for (const id of ids) {
+    const p = _allProducts.find(x => x.id === id);
+    if (!p) continue;
+    const res = await apiFetch(`/api/admin/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name_zh: p.name_zh, name_en: p.name_en||'', category: p.category, description: p.description||'', notes: p.notes||'', sort_order: p.sort_order??99, pm_user_id: pmId }),
+    });
+    if (res && res.ok) ok++;
+  }
+  showToast(`已更新 ${ok} 個產品的負責人`, ok === ids.length ? 'success' : 'warning');
+  loadProducts();
+}
+
+async function batchDeleteProducts() {
+  const ids = _getSelectedProductIds();
+  if (!ids.length) return;
+  if (!confirm(`確定刪除 ${ids.length} 個產品？此操作無法復原。`)) return;
+
+  let ok = 0;
+  for (const id of ids) {
+    const res = await apiFetch(`/api/admin/products/${id}`, { method: 'DELETE' });
+    if (res && res.ok) ok++;
+  }
+  showToast(`已刪除 ${ok} 個產品`, ok === ids.length ? 'success' : 'warning');
+  loadProducts();
 }
 
 let _pmUsers = [];
@@ -453,12 +572,23 @@ async function loadUsers() {
   `).join('');
 }
 
+function _applyRoleDropdownRestriction() {
+  // 非超級管理員不能看到 super_admin 選項
+  const sel = document.getElementById('u_role');
+  if (!sel) return;
+  const superAdminOpt = sel.querySelector('option[value="super_admin"]');
+  if (superAdminOpt) {
+    superAdminOpt.style.display = _currentUser?.role === 'super_admin' ? '' : 'none';
+  }
+}
+
 function openAddUser() {
   document.getElementById('userModalTitle').textContent = '新增用戶';
   document.getElementById('user_id').value = '';
   document.getElementById('pwdHint').style.display = 'none';
   ['u_username','u_password','u_display','u_email','u_quote_prefix'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('u_role').value = 'sales';
+  _applyRoleDropdownRestriction();
   document.getElementById('userModal').classList.add('open');
 }
 
@@ -472,6 +602,7 @@ function openEditUser(id, username, role, display, email, quotePrefix = '') {
   document.getElementById('u_email').value = email;
   document.getElementById('u_quote_prefix').value = quotePrefix;
   document.getElementById('pwdHint').style.display = 'inline';
+  _applyRoleDropdownRestriction();
   document.getElementById('userModal').classList.add('open');
 }
 

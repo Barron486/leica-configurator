@@ -206,6 +206,18 @@ router.put('/products/:id', perm('manage_products'), (req, res) => {
   res.json({ message: '已更新' });
 });
 
+// ── Delete Product ────────────────────────────────────────────
+router.delete('/products/:id', perm('manage_products'), (req, res) => {
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id);
+  if (!existing) { db.close(); return res.status(404).json({ error: '產品不存在' }); }
+  db.prepare('DELETE FROM product_dependencies WHERE product_id=? OR requires_product_id=?').run(req.params.id, req.params.id);
+  db.prepare('DELETE FROM products WHERE id=?').run(req.params.id);
+  db.close();
+  logAudit({ userId: req.user.id, username: req.user.username, role: req.user.role, action: 'delete_product', resource: 'products', resourceId: req.params.id, detail: { catalog_number: existing.catalog_number, name_zh: existing.name_zh }, ip: getIp(req) });
+  res.json({ message: '已刪除' });
+});
+
 // ── Pricing ──────────────────────────────────────────────────
 router.put('/pricing/:product_id', perm('manage_pricing'), (req, res) => {
   const { cost_price, min_sell_price, suggested_price, retail_price, currency, notes } = req.body;
@@ -233,6 +245,10 @@ router.get('/users', perm('manage_users'), (req, res) => {
 router.post('/users', perm('manage_users'), (req, res) => {
   const { username, password, role, display_name, email, quote_prefix } = req.body;
   if (!username || !password || !role) return res.status(400).json({ error: '帳號、密碼、角色為必填' });
+  // 只有超級管理員可以建立超級管理員帳號
+  if (role === 'super_admin' && req.user?.role !== 'super_admin') {
+    return res.status(403).json({ error: '只有超級管理員可以建立超級管理員帳號' });
+  }
   const hash = bcrypt.hashSync(password, 10);
   const db = getDb();
   try {
@@ -249,6 +265,10 @@ router.post('/users', perm('manage_users'), (req, res) => {
 
 router.put('/users/:id', perm('manage_users'), (req, res) => {
   const { role, display_name, email, password, quote_prefix } = req.body;
+  // 只有超級管理員可以設定或修改超級管理員角色
+  if (role === 'super_admin' && req.user?.role !== 'super_admin') {
+    return res.status(403).json({ error: '只有超級管理員可以指派超級管理員角色' });
+  }
   const prefix = (quote_prefix || '').toUpperCase();
   const db = getDb();
   if (password) {

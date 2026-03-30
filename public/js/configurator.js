@@ -628,8 +628,10 @@ function changeCustomQty(id, delta) {
 
 // ── Render summary ────────────────────────────────────────────
 function renderSummary() {
-  const allDbItems = products.filter(p => extraSelected.has(p.id));
-  const hasItems   = allDbItems.length > 0 || customItems.length > 0;
+  computeAutoDeps();
+  const allDbItems  = products.filter(p => extraSelected.has(p.id));
+  const autoDepItems = products.filter(p => autoDeps.has(p.id));
+  const hasItems    = allDbItems.length > 0 || customItems.length > 0;
 
   const tbody      = document.getElementById('summaryItems');
   const priceBlock = document.getElementById('priceBlock');
@@ -663,6 +665,25 @@ function renderSummary() {
           <span class="text-muted" style="font-size:11px">${p.catalog_number}</span></td>
       <td>${lineTotal > 0 ? formatPrice(lineTotal, p.currency) : ''}</td>
     </tr>`;
+  }
+
+  // 自動關聯產品（autoDeps）
+  if (autoDepItems.length > 0) {
+    rows += `<tr><td colspan="2" style="font-size:10px;color:#888;padding:4px 2px;border-top:1px dashed #DDD">⚙ 自動關聯</td></tr>`;
+    for (const p of autoDepItems) {
+      const qty       = autoDeps.get(p.id);
+      const effPrice  = getEffectivePrice(p);
+      const lineTotal = effPrice * qty;
+      total       += lineTotal;
+      totalMin    += (p.min_sell_price || 0) * qty;
+      totalCost   += (p.cost_price     || 0) * qty;
+      totalRetail += (p.retail_price   || 0) * qty;
+      rows += `<tr style="opacity:0.75">
+        <td>${p.name_zh}${qty > 1 ? ` <span style="color:#1565C0;font-size:11px">×${qty}</span>` : ''}<br>
+            <span class="text-muted" style="font-size:11px">${p.catalog_number}</span></td>
+        <td>${lineTotal > 0 ? formatPrice(lineTotal, p.currency) : ''}</td>
+      </tr>`;
+    }
   }
 
   for (const ci of customItems) {
@@ -849,7 +870,9 @@ const INVOICE_CATEGORY_LABELS = {
 };
 
 function renderInvoice() {
-  const items = products.filter(p => extraSelected.has(p.id));
+  computeAutoDeps();
+  const items      = products.filter(p => extraSelected.has(p.id));
+  const depItems   = products.filter(p => autoDeps.has(p.id));
   const priceKey = user.role === 'customer' ? 'retail_price' : 'suggested_price';
 
   const custName  = document.getElementById('cust_name')?.value.trim()  || '（請填寫）';
@@ -868,16 +891,25 @@ function renderInvoice() {
     const qty = extraSelected.get(p.id);
     return s + getEffectivePrice(p) * (qty || 1);
   }, 0);
+  const depTotal = depItems.reduce((s, p) => {
+    const qty = autoDeps.get(p.id);
+    return s + getEffectivePrice(p) * (qty || 1);
+  }, 0);
   const customTotal = customItems.reduce((s, ci) => s + ci.price * ci.quantity, 0);
-  const total   = dbTotal + customTotal;
+  const total   = dbTotal + depTotal + customTotal;
   const allFree = total === 0;
 
-  // ── 依類別分組並建立表格列 ─────────────────────────────────
+  // ── 依類別分組並建立表格列（含 autoDeps）─────────────────────
   const categoryOrder = ['base','orientation','clamping','holder','blade_base','blade_holder','blade','cooling','lighting','accessory'];
   const grouped = {};
+  // 合併 extraSelected 和 autoDeps，標記 autoDeps 來源
   items.forEach(p => {
     if (!grouped[p.category]) grouped[p.category] = [];
-    grouped[p.category].push(p);
+    grouped[p.category].push({ ...p, _isAutoDep: false });
+  });
+  depItems.forEach(p => {
+    if (!grouped[p.category]) grouped[p.category] = [];
+    grouped[p.category].push({ ...p, _isAutoDep: true });
   });
 
   let rowNum = 0;
@@ -895,11 +927,12 @@ function renderInvoice() {
       </tr>`;
     catItems.forEach(p => {
       rowNum++;
-      const qty       = extraSelected.get(p.id) || 1;
+      const isAutoDep = p._isAutoDep;
+      const qty       = isAutoDep ? (autoDeps.get(p.id) || 1) : (extraSelected.get(p.id) || 1);
       const unitPrice = getEffectivePrice(p);
       const subtotal  = unitPrice * qty;
       const bg = rowNum % 2 === 0 ? '#FAFAFA' : '#FFFFFF';
-      const canEdit   = user.role !== 'customer';
+      const canEdit   = user.role !== 'customer' && !isAutoDep;
 
       const priceCell = canEdit
         ? `<input
@@ -913,10 +946,14 @@ function renderInvoice() {
           >`
         : (unitPrice > 0 ? formatPrice(unitPrice) : '');
 
+      const autoDepBadge = isAutoDep
+        ? '<span style="font-size:9px;color:#888;background:#F0F0F0;border-radius:3px;padding:1px 4px;margin-left:4px">關聯</span>'
+        : '';
+
       tableRows += `
-        <tr style="background:${bg}">
+        <tr style="background:${bg}${isAutoDep ? ';opacity:0.85' : ''}">
           <td style="padding:9px 10px; color:#222; font-size:12.5px; line-height:1.4">
-            ${p.name_zh}
+            ${p.name_zh}${autoDepBadge}
             ${p.is_included_in_base && !p.is_base_unit ? '<span style="font-size:10px;color:#28A745;margin-left:4px">（含於主機）</span>' : ''}
             ${p.description ? `<div style="font-size:10.5px;color:#888;margin-top:3px;line-height:1.5;font-weight:400">${escHtml(p.description)}</div>` : ''}
           </td>
@@ -925,11 +962,12 @@ function renderInvoice() {
             ${priceCell}
           </td>
           <td style="padding:9px 10px; text-align:center; color:#1A1A2E; font-size:12.5px; font-weight:600; white-space:nowrap">
+            ${isAutoDep ? `<span id="invoice-qty-${p.id}">${qty}</span>` : `
             <div style="display:inline-flex;align-items:center;gap:4px">
               <button onclick="updateInvoiceQty(${p.id},-1)" style="width:20px;height:20px;border:1px solid #DDD;border-radius:4px;background:#FFF;cursor:pointer;font-size:13px;line-height:1;padding:0">−</button>
               <span id="invoice-qty-${p.id}" style="min-width:20px;text-align:center">${qty}</span>
               <button onclick="updateInvoiceQty(${p.id},1)" style="width:20px;height:20px;border:1px solid #DDD;border-radius:4px;background:#FFF;cursor:pointer;font-size:13px;line-height:1;padding:0">+</button>
-            </div>
+            </div>`}
           </td>
           <td id="invoice-sub-${p.id}" style="padding:9px 10px; text-align:right; color:#1A1A2E; font-size:12.5px; font-weight:700; white-space:nowrap">
             ${subtotal > 0 ? formatPrice(subtotal) : ''}

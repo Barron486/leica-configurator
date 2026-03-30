@@ -194,10 +194,41 @@
       <strong>產品清單</strong>
       <button class="btn btn-primary btn-sm" onclick="openAddProduct()">+ 新增產品</button>
     </div>
+    <!-- 批次操作工具列 -->
+    <div id="productBatchBar" style="display:none; background:#E8F4FF; border:1px solid #B3D9FF; border-radius:6px; padding:10px 14px; margin-bottom:12px; align-items:center; gap:10px; flex-wrap:wrap">
+      <span id="productBatchCount" style="font-size:13px; color:#0056A3; font-weight:600"></span>
+      <div style="flex:1"></div>
+      <div class="form-group" style="margin:0; display:flex; align-items:center; gap:6px">
+        <label style="font-size:12px; white-space:nowrap; margin:0">批次調整類別：</label>
+        <select id="batchCategorySelect" style="padding:4px 8px; border:1px solid #CCC; border-radius:4px; font-size:12px">
+          <option value="">— 選擇 —</option>
+          <option value="base">基礎主機</option>
+          <option value="orientation">檢體夾具固定裝置</option>
+          <option value="clamping">快速夾緊系統</option>
+          <option value="holder">檢體夾具</option>
+          <option value="blade_base">刀架底座</option>
+          <option value="blade_holder">刀架 / 刀片架</option>
+          <option value="blade">刀片（耗材）</option>
+          <option value="cooling">冷卻系統</option>
+          <option value="lighting">照明與觀察</option>
+          <option value="accessory">其他配件</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="batchSetCategory()">套用類別</button>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px">
+        <label style="font-size:12px; white-space:nowrap; margin:0">批次調整負責人：</label>
+        <select id="batchPmSelect" style="padding:4px 8px; border:1px solid #CCC; border-radius:4px; font-size:12px">
+          <option value="">— 選擇 —</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="batchSetPm()">套用負責人</button>
+      </div>
+      <button class="btn btn-sm" style="background:#DC3545; color:#FFF; border-color:#DC3545" onclick="batchDeleteProducts()">🗑 批次刪除</button>
+    </div>
     <div class="card">
       <table class="data-table">
         <thead>
           <tr>
+            <th style="width:36px; text-align:center"><input type="checkbox" id="productSelectAll" onchange="toggleSelectAllProducts(this.checked)" title="全選"></th>
             <th>料號</th>
             <th>中文名稱</th>
             <th>類別</th>
@@ -207,7 +238,7 @@
           </tr>
         </thead>
         <tbody id="productsBody">
-          <tr><td colspan="5" class="text-muted">載入中…</td></tr>
+          <tr><td colspan="7" class="text-muted">載入中…</td></tr>
         </tbody>
       </table>
     </div>
