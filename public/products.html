@@ -2,6 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
+  <script>(function(){var t=localStorage.getItem('theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})()</script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Leica Biosystems 產品配置選擇器</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -128,6 +129,7 @@
     <div class="sidebar-user">
       <span id="userName" class="sidebar-username"></span>
       <span id="roleBadge" class="role-badge"></span>
+      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙 深色模式</button>
       <button class="sidebar-logout" onclick="logout()">登出</button>
     </div>
   </nav>
@@ -195,6 +197,7 @@
   </div>
 </div>
 
+<script src="/js/theme.js"></script>
 <script src="/js/auth.js"></script>
 <script>
   const DP_SUBCATEGORY_META = {
