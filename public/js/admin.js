@@ -882,7 +882,7 @@ async function removeChainMember(id, name) {
 
 // ── BOM Management ────────────────────────────────────────────
 let _currentBomId = null;
-let _allProducts   = [];
+let _bomProducts   = [];
 
 async function loadBoms() {
   const res = await apiFetch('/api/admin/boms');
@@ -980,13 +980,13 @@ async function openBomDetail(bomId, bomName) {
   document.getElementById('bomDetailModal').classList.add('open');
 
   // 預載所有產品到下拉選單（只抓一次）
-  if (!_allProducts.length) {
+  if (!_bomProducts.length) {
     const pr = await apiFetch('/api/admin/products');
-    if (pr && pr.ok) _allProducts = await pr.json();
+    if (pr && pr.ok) _bomProducts = await pr.json();
   }
   const sel = document.getElementById('bom_add_product');
   sel.innerHTML = '<option value="">— 選擇產品 —</option>' +
-    _allProducts.filter(p => p.active).map(p =>
+    _bomProducts.filter(p => p.active).map(p =>
       `<option value="${p.id}">[${p.catalog_number}] ${p.name_zh}</option>`
     ).join('');
 
