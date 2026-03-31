@@ -753,6 +753,9 @@ function renderImportPreview(data) {
     <span class="summary-pill pill-update">更新 ${data.update_count}</span>
     ${data.error_count ? `<span class="summary-pill pill-error">錯誤 ${data.error_count}</span>` : ''}
   `;
+  if (data.fallback_used) {
+    showToast('AI 額度不足，已改用規則型欄位對應，請確認欄位是否正確', 'warning');
+  }
 
   // Table rows
   const CATEGORY_LABELS = {

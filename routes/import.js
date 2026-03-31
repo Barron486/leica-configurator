@@ -71,6 +71,68 @@ function getApiKey() {
   } catch { return ''; }
 }
 
+// ── Fallback：規則型欄位對應（AI 不可用時）─────────────────────
+const FALLBACK_COL_PATTERNS = {
+  catalog_number: /料號|型號|catalog.?number|product.?no|item.?no|sku/i,
+  name_zh:        /中文名稱|中文品名|中文|品名|name_zh/i,
+  name_en:        /英文名稱|英文|name_en|english.?name/i,
+  category:       /類別|分類|category/i,
+  description:    /說明|描述|description/i,
+  notes:          /注意|備註|note/i,
+  sort_order:     /排序|sort/i,
+  cost_price:     /成本價?|cost/i,
+  min_sell_price: /最低售價|min.*price|lowest/i,
+  suggested_price:/建議報價|suggested/i,
+  retail_price:   /零售價|retail/i,
+  is_base_unit:   /主機|base.?unit/i,
+  is_included_in_base: /含於基礎|included/i,
+};
+
+const CATEGORY_ZH_MAP = {
+  '基礎配置': 'base', '主機': 'base',
+  '檢體夾具固定裝置': 'orientation', '固定裝置': 'orientation',
+  '快速夾緊系統': 'clamping', '夾緊': 'clamping',
+  '檢體夾具': 'holder', '夾具': 'holder',
+  '刀架底座': 'blade_base',
+  '刀架': 'blade_holder', '刀片架': 'blade_holder',
+  '刀片': 'blade', '耗材': 'blade',
+  '冷卻系統': 'cooling', '冷卻': 'cooling',
+  '照明': 'lighting', '觀察': 'lighting',
+  '其他配件': 'accessory', '配件': 'accessory',
+};
+
+function buildFallbackProducts(rows) {
+  const columns = Object.keys(rows[0]);
+  // 建立欄位對應表
+  const mapping = {};
+  for (const col of columns) {
+    for (const [field, rx] of Object.entries(FALLBACK_COL_PATTERNS)) {
+      if (rx.test(col.trim()) && !Object.values(mapping).includes(field)) {
+        mapping[col] = field; break;
+      }
+    }
+  }
+  return rows.map(row => {
+    const p = {};
+    for (const [col, val] of Object.entries(row)) {
+      const field = mapping[col];
+      if (!field || p[field] !== undefined) continue;
+      const v = String(val ?? '').trim();
+      if (['cost_price','min_sell_price','suggested_price','retail_price','sort_order'].includes(field)) {
+        const n = parseFloat(v.replace(/,/g, ''));
+        if (!isNaN(n)) p[field] = n;
+      } else if (['is_base_unit','is_included_in_base'].includes(field)) {
+        p[field] = /是|1|true|yes|v|✓/i.test(v) ? 1 : 0;
+      } else if (field === 'category') {
+        p[field] = VALID_CATEGORIES.includes(v) ? v : (CATEGORY_ZH_MAP[v] || 'accessory');
+      } else {
+        if (v) p[field] = v;
+      }
+    }
+    return p;
+  });
+}
+
 // ── POST /api/admin/import/preview ────────────────────────────
 // 上傳 Excel → Claude 分析 → 回傳預覽資料（不寫入 DB）
 router.post('/preview', permImport, upload.single('file'), async (req, res) => {
@@ -103,6 +165,7 @@ ${JSON.stringify(rows, null, 2)}
 請直接輸出 JSON 陣列。`;
 
   let products;
+  let usedFallback = false;
   try {
     const msg = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -114,7 +177,9 @@ ${JSON.stringify(rows, null, 2)}
     const match = text.match(/\[[\s\S]+\]/);
     products = JSON.parse(match ? match[0] : text);
   } catch (e) {
-    return res.status(500).json({ error: 'Claude 分析失敗：' + e.message });
+    console.warn('[import] Claude 失敗，使用規則型 fallback：', e.message);
+    products = buildFallbackProducts(rows);
+    usedFallback = true;
   }
 
   // 驗證並標記每筆狀態
@@ -144,6 +209,7 @@ ${JSON.stringify(rows, null, 2)}
     update_count: result.filter(p => p._status === 'update').length,
     error_count:  result.filter(p => p._status === 'error').length,
     products: result,
+    fallback_used: usedFallback,
   });
 });
 
