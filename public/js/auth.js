@@ -3,6 +3,26 @@
 function getToken() { return localStorage.getItem('token'); }
 function getUser()  { return JSON.parse(localStorage.getItem('user') || 'null'); }
 
+// ── Sidebar collapse ──────────────────────
+function toggleSidebarCollapse() {
+  const sidebar = document.querySelector('.sidebar');
+  const shell   = document.querySelector('.app-shell');
+  if (!sidebar) return;
+  const collapsed = sidebar.classList.toggle('collapsed');
+  if (shell) shell.classList.toggle('sidebar-collapsed', collapsed);
+  localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+}
+
+(function initSidebarCollapse() {
+  if (localStorage.getItem('sidebarCollapsed') !== '1') return;
+  document.addEventListener('DOMContentLoaded', function () {
+    const sidebar = document.querySelector('.sidebar');
+    const shell   = document.querySelector('.app-shell');
+    if (sidebar) sidebar.classList.add('collapsed');
+    if (shell)   shell.classList.add('sidebar-collapsed');
+  });
+})();
+
 function requireAuth() {
   const user = getUser();
   if (!user) { window.location = '/login.html'; return null; }
