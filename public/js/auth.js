@@ -15,12 +15,17 @@ function toggleSidebarCollapse() {
 
 (function initSidebarCollapse() {
   if (localStorage.getItem('sidebarCollapsed') !== '1') return;
-  document.addEventListener('DOMContentLoaded', function () {
+  function applyCollapse() {
     const sidebar = document.querySelector('.sidebar');
     const shell   = document.querySelector('.app-shell');
     if (sidebar) sidebar.classList.add('collapsed');
     if (shell)   shell.classList.add('sidebar-collapsed');
-  });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyCollapse);
+  } else {
+    applyCollapse();
+  }
 })();
 
 function requireAuth() {
