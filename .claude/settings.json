@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path') && echo \"$f\" | grep -qE 'public/.*\\.(css|js)$' || exit 0 && base=$(basename \"$f\") && for html in /home/user/leica-configurator/public/*.html; do grep -q \"${base}?v=\" \"$html\" || continue; current=$(grep -o \"${base}?v=[0-9]*\" \"$html\" | grep -o '[0-9]*$' | head -1); next=$((current + 1)); sed -i \"s|${base}?v=${current}|${base}?v=${next}|g\" \"$html\"; done",
+            "statusMessage": "Bumping asset version..."
+          }
+        ]
+      }
+    ]
+  }
+}
