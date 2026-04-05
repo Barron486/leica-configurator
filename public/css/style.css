@@ -131,11 +131,7 @@ header .user-info { display: flex; align-items: center; gap: 10px; }
   display: flex;
   flex-direction: column;
   border-right: 1px solid rgba(255,255,255,0.05);
-  width: 210px;
-  transition: width 0.25s ease;
-}
-.sidebar.collapsed {
-  width: 54px;
+  min-width: 0;
 }
 
 .sidebar-brand {
