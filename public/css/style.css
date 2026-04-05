@@ -114,6 +114,10 @@ header .user-info { display: flex; align-items: center; gap: 10px; }
   display: grid;
   grid-template-columns: 210px 1fr;
   min-height: 100vh;
+  transition: grid-template-columns 0.25s ease;
+}
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 54px 1fr;
 }
 
 /* ── Sidebar ─────────────────────────────── */
@@ -123,14 +127,50 @@ header .user-info { display: flex; align-items: center; gap: 10px; }
   top: 0;
   height: 100vh;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   border-right: 1px solid rgba(255,255,255,0.05);
+  width: 210px;
+  transition: width 0.25s ease;
+}
+.sidebar.collapsed {
+  width: 54px;
 }
 
 .sidebar-brand {
   padding: 18px 16px 14px;
   border-bottom: 1px solid rgba(255,255,255,0.07);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sidebar.collapsed .sidebar-brand {
+  justify-content: center;
+  padding: 14px 8px;
+}
+
+/* Sidebar collapse toggle button */
+.sidebar-collapse-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(255,255,255,0.28);
+  font-size: 13px;
+  padding: 4px 6px;
+  border-radius: var(--r-md);
+  transition: color 0.12s, background 0.12s, transform 0.25s;
+  flex-shrink: 0;
+  line-height: 1;
+  font-family: inherit;
+}
+.sidebar-collapse-btn:hover {
+  color: rgba(255,255,255,0.75);
+  background: rgba(255,255,255,0.07);
+}
+.sidebar.collapsed .sidebar-collapse-btn {
+  transform: rotate(180deg);
 }
 .sidebar-logo {
   font-size: 18px;
@@ -203,6 +243,44 @@ header .user-info { display: flex; align-items: center; gap: 10px; }
   flex-shrink: 0;
   width: 18px;
   text-align: center;
+}
+.sidebar-link-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Sidebar collapsed: icon-only mode */
+.sidebar.collapsed .sidebar-logo-sub,
+.sidebar.collapsed .sidebar-section-label,
+.sidebar.collapsed .sidebar-link-text,
+.sidebar.collapsed .sidebar-username,
+.sidebar.collapsed .role-badge,
+.sidebar.collapsed .sidebar-logout,
+.sidebar.collapsed .theme-switch-track {
+  display: none;
+}
+.sidebar.collapsed .sidebar-logo {
+  display: none;
+}
+.sidebar.collapsed .sidebar-nav {
+  padding: 10px 4px;
+}
+.sidebar.collapsed .sidebar-link {
+  justify-content: center;
+  padding: 9px 0;
+  gap: 0;
+}
+.sidebar.collapsed .sidebar-link-icon {
+  width: auto;
+  font-size: 16px;
+}
+.sidebar.collapsed .sidebar-user {
+  display: flex;
+  justify-content: center;
+  padding: 12px 4px 14px;
+}
+.sidebar.collapsed .sidebar-divider {
+  margin: 0 4px;
 }
 
 /* Canvas Grid divider inside sidebar */
