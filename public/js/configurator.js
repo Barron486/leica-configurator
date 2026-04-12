@@ -227,7 +227,36 @@ function _refreshInvoiceTotal() {
     }
   }
 
-  // ── 一般模式（含無 bom param）：顯示所有產品目錄 ──────────
+  // ── 從購物車載入（products.html 加入的 BOM）────────────────
+  if (!bomId && !editId) {
+    const cart = JSON.parse(localStorage.getItem('gqc_cart') || '[]');
+    if (cart.length > 0) {
+      localStorage.removeItem('gqc_cart');
+      for (const { bomId: cBomId, bomName } of cart) {
+        const cRes = await apiFetch(`/api/admin/boms/${cBomId}/config`);
+        if (cRes && cRes.ok) {
+          const { items } = await cRes.json();
+          items.forEach(item => {
+            if (!extraSelected.has(item.product_id)) {
+              extraSelected.set(item.product_id, item.quantity);
+            }
+            if (item.name_zh && !products.find(p => p.id === item.product_id)) {
+              products.push({
+                id: item.product_id,
+                name_zh: item.name_zh,
+                catalog_number: item.catalog_number || '',
+                category: item.category || 'accessory',
+                description: item.description || '',
+                sort_order: 99,
+              });
+            }
+          });
+        }
+      }
+    }
+  }
+
+  // ── 一般模式（含無 bom param）：顯示已選品項 ──────────────
   computeAutoDeps();
   renderProducts();
   renderSummary();
@@ -235,140 +264,78 @@ function _refreshInvoiceTotal() {
 
 // CATEGORY_LABELS is defined in auth.js (shared)
 
-// ── Render product list（購物車目錄模式）────────────────────────
+// ── Render product list（只顯示已選品項）────────────────────────
 function renderProducts() {
   computeAutoDeps();
   const container = document.getElementById('productList');
+  const cartItems = products.filter(p => extraSelected.has(p.id));
+  const depItems  = products.filter(p => autoDeps.has(p.id) && !extraSelected.has(p.id));
 
-  // BOM 模式：只顯示該 BOM 的品項，不顯示完整產品目錄
-  if (_bomMode) {
-    renderBomProducts(container);
-    return;
+  let html = '';
+
+  // BOM 模式提示橫幅
+  if (_bomMode && _bomName) {
+    html += `
+      <div class="bom-banner">
+        <span style="font-size:16px">📋</span>
+        <span><strong>${escHtml(_bomName)}</strong> 配置品項清單。可用上方搜尋按鈕或下方表單新增其他品項。</span>
+      </div>`;
   }
 
-  const categoryOrder = ['base','orientation','clamping','holder','blade_base','blade_holder','blade','cooling','lighting','accessory'];
+  // 空狀態提示
+  if (!cartItems.length && !depItems.length && !customItems.length) {
+    html += `
+      <div style="text-align:center;padding:40px 20px;color:#AAA">
+        <div style="font-size:36px;margin-bottom:12px">🛒</div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#888">尚未加入任何品項</div>
+        <div style="font-size:12px">點擊上方「🔍 搜尋並新增產品」或至<a href="/products.html" style="color:#005FAE">產品目錄</a>選購</div>
+      </div>`;
+  }
 
-  // 搜尋 / 類別過濾
-  const search = _cartSearch.trim().toLowerCase();
-  const catFilter = _cartCatFilter;
-
-  let filteredProducts = products.filter(p => {
-    if (catFilter && p.category !== catFilter) return false;
-    if (search) {
-      const haystack = [p.name_zh, p.catalog_number, p.name_en].filter(Boolean).join(' ').toLowerCase();
-      if (!haystack.includes(search)) return false;
-    }
-    return true;
-  });
-
-  // 頂部：搜尋列 + 類別過濾
-  const catOptions = categoryOrder.map(c =>
-    `<option value="${c}" ${catFilter === c ? 'selected' : ''}>${CATEGORY_LABELS[c] || c}</option>`
-  ).join('');
-
-  let html = `
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-      <input
-        id="cartSearch"
-        type="text"
-        placeholder="搜尋品名、料號…"
-        value="${escHtml(_cartSearch)}"
-        oninput="_cartSearch=this.value; renderProducts()"
-        class="filter-input"
-      >
-      <select
-        id="catFilter"
-        onchange="_cartCatFilter=this.value; renderProducts()"
-        class="filter-select"
-      >
-        <option value="" ${!catFilter ? 'selected' : ''}>全部類別</option>
-        ${catOptions}
-      </select>
+  // 已選 DB 產品
+  for (const p of cartItems) {
+    const qty = extraSelected.get(p.id) || 1;
+    html += `<div class="product-item selected">
+      <div class="product-info">
+        <div class="product-name">${escHtml(p.name_zh)}</div>
+        <div class="product-code">${escHtml(p.catalog_number)}</div>
+        ${p.description ? `<div class="product-desc">${escHtml(p.description)}</div>` : ''}
+      </div>
+      <div class="product-price">
+        ${renderPriceColumn(p)}
+        <div class="qty-stepper" onclick="event.stopPropagation()">
+          <button class="qty-btn" onclick="changeCartQty(${p.id}, -1)">−</button>
+          <span class="qty-val">${qty}</span>
+          <button class="qty-btn" onclick="changeCartQty(${p.id}, 1)">+</button>
+        </div>
+        <button class="btn btn-outline btn-sm" style="margin-top:6px;color:#DC3545;border-color:#DC3545;font-size:11px" onclick="removeFromCart(${p.id})">移除</button>
+      </div>
     </div>`;
-
-  // 依 categoryOrder 分組顯示
-  const grouped = {};
-  filteredProducts.forEach(p => {
-    if (!grouped[p.category]) grouped[p.category] = [];
-    grouped[p.category].push(p);
-  });
-
-  let anyProduct = false;
-  for (const cat of categoryOrder) {
-    const items = grouped[cat];
-    if (!items || items.length === 0) continue;
-    anyProduct = true;
-    items.sort((a, b) => a.sort_order - b.sort_order);
-
-    html += `<div class="category-section"><div class="category-title">${CATEGORY_LABELS[cat] || cat}</div>`;
-
-    for (const p of items) {
-      const inCart   = extraSelected.has(p.id);
-      const isAutoDep = autoDeps.has(p.id) && !inCart;
-
-      if (isAutoDep) {
-        // 自動帶入品項
-        const qty = autoDeps.get(p.id);
-        html += `<div class="product-item selected product-item--auto" style="opacity:0.85">
-          <div class="product-info">
-            <div class="product-name">${escHtml(p.name_zh)} <span style="color:#5B8DEF;font-size:10px;font-weight:600">⬡ 自動帶入</span></div>
-            <div class="product-code">${escHtml(p.catalog_number)}</div>
-            ${p.description ? `<div class="product-desc">${escHtml(p.description)}</div>` : ''}
-          </div>
-          <div class="product-price">
-            ${renderPriceColumn(p)}
-            <div class="qty-stepper" onclick="event.stopPropagation()">
-              <button class="qty-btn" disabled style="opacity:0.4">−</button>
-              <span class="qty-val">${qty}</span>
-              <button class="qty-btn" disabled style="opacity:0.4">+</button>
-            </div>
-          </div>
-        </div>`;
-      } else if (inCart) {
-        // 已在購物車
-        const qty = extraSelected.get(p.id) || 1;
-        html += `<div class="product-item selected">
-          <div class="product-info">
-            <div class="product-name">${escHtml(p.name_zh)}</div>
-            <div class="product-code">${escHtml(p.catalog_number)}</div>
-          </div>
-          <div class="product-price">
-            ${renderPriceColumn(p)}
-            <div class="qty-stepper" onclick="event.stopPropagation()">
-              <button class="qty-btn" onclick="changeCartQty(${p.id}, -1)">−</button>
-              <span class="qty-val">${qty}</span>
-              <button class="qty-btn" onclick="changeCartQty(${p.id}, 1)">+</button>
-            </div>
-            <button class="btn btn-outline btn-sm" style="margin-top:6px;color:#DC3545;border-color:#DC3545;font-size:11px" onclick="removeFromCart(${p.id})">移除</button>
-          </div>
-        </div>`;
-      } else {
-        // 未加入購物車
-        html += `<div class="product-item">
-          <div class="product-info">
-            <div class="product-name">${escHtml(p.name_zh)}</div>
-            <div class="product-code">${escHtml(p.catalog_number)}</div>
-            ${p.description ? `<div class="product-desc">${escHtml(p.description)}</div>` : ''}
-            ${p.notes ? `<div class="product-note">⚠ ${escHtml(p.notes)}</div>` : ''}
-          </div>
-          <div class="product-price">
-            ${renderPriceColumn(p)}
-            <button class="btn btn-outline btn-sm" style="margin-top:6px;white-space:nowrap" onclick="addToCart(${p.id})">＋ 加入購物車</button>
-          </div>
-        </div>`;
-      }
-    }
-
-    html += `</div>`;
   }
 
-  if (!anyProduct) {
-    html += `<div style="text-align:center;padding:40px;color:#AAA;font-size:13px">找不到符合條件的產品</div>`;
+  // 自動帶入品項
+  for (const p of depItems) {
+    const qty = autoDeps.get(p.id);
+    html += `<div class="product-item selected product-item--auto" style="opacity:0.85">
+      <div class="product-info">
+        <div class="product-name">${escHtml(p.name_zh)} <span style="color:#5B8DEF;font-size:10px;font-weight:600">⬡ 自動帶入</span></div>
+        <div class="product-code">${escHtml(p.catalog_number)}</div>
+      </div>
+      <div class="product-price">
+        ${renderPriceColumn(p)}
+        <div class="qty-stepper">
+          <button class="qty-btn" disabled style="opacity:0.4">−</button>
+          <span class="qty-val">${qty}</span>
+          <button class="qty-btn" disabled style="opacity:0.4">+</button>
+        </div>
+      </div>
+    </div>`;
   }
 
-  // 自訂品項 section
+  // 自訂品項
   if (customItems.length > 0) {
-    html += `<div class="category-section"><div class="category-title" style="display:flex;justify-content:space-between;align-items:center"><span>自訂品項</span><span style="font-size:10px;font-weight:400;color:#AAA">可移除</span></div>`;
+    html += `<div style="margin-top:${cartItems.length || depItems.length ? 12 : 0}px;${cartItems.length || depItems.length ? 'border-top:1px solid #EEE;padding-top:12px' : ''}">
+      <div style="font-size:11px;font-weight:700;color:#666;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">自訂品項</div>`;
     for (const ci of customItems) {
       html += `<div class="product-item selected">
         <div class="product-info">
@@ -390,90 +357,9 @@ function renderProducts() {
     html += `</div>`;
   }
 
-  // 手動新增自訂品項表單（一直顯示）
+  // 手動新增自訂品項表單
   html += _renderCustomItemForm();
 
-  container.innerHTML = html;
-}
-
-// ── BOM 模式：只顯示 BOM 品項清單 ─────────────────────────────
-function renderBomProducts(container) {
-  const cartItems = products.filter(p => extraSelected.has(p.id));
-  const depItems  = products.filter(p => autoDeps.has(p.id) && !extraSelected.has(p.id));
-
-  let html = `
-    <div class="bom-banner">
-      <span style="font-size:16px">📋</span>
-      <span><strong>${escHtml(_bomName)}</strong> 配置品項清單。如需新增其他品項，請使用下方「手動新增自訂品項」。</span>
-    </div>`;
-
-  if (!cartItems.length && !depItems.length) {
-    html += `<div style="text-align:center;padding:32px;color:#AAA;font-size:13px">無配置品項</div>`;
-  }
-
-  for (const p of cartItems) {
-    const qty = extraSelected.get(p.id) || 1;
-    html += `<div class="product-item selected">
-      <div class="product-info">
-        <div class="product-name">${escHtml(p.name_zh)}</div>
-        <div class="product-code">${escHtml(p.catalog_number)}</div>
-        ${p.description ? `<div class="product-desc">${escHtml(p.description)}</div>` : ''}
-      </div>
-      <div class="product-price">
-        ${renderPriceColumn(p)}
-        <div class="qty-stepper" onclick="event.stopPropagation()">
-          <button class="qty-btn" onclick="changeCartQty(${p.id}, -1)">−</button>
-          <span class="qty-val">${qty}</span>
-          <button class="qty-btn" onclick="changeCartQty(${p.id}, 1)">+</button>
-        </div>
-        <button class="btn btn-outline btn-sm" style="margin-top:6px;color:#DC3545;border-color:#DC3545;font-size:11px" onclick="removeFromCart(${p.id})">移除</button>
-      </div>
-    </div>`;
-  }
-
-  for (const p of depItems) {
-    const qty = autoDeps.get(p.id);
-    html += `<div class="product-item selected product-item--auto" style="opacity:0.85">
-      <div class="product-info">
-        <div class="product-name">${escHtml(p.name_zh)} <span style="color:#5B8DEF;font-size:10px;font-weight:600">⬡ 自動帶入</span></div>
-        <div class="product-code">${escHtml(p.catalog_number)}</div>
-      </div>
-      <div class="product-price">
-        ${renderPriceColumn(p)}
-        <div class="qty-stepper">
-          <button class="qty-btn" disabled style="opacity:0.4">−</button>
-          <span class="qty-val">${qty}</span>
-          <button class="qty-btn" disabled style="opacity:0.4">+</button>
-        </div>
-      </div>
-    </div>`;
-  }
-
-  // 自訂品項
-  if (customItems.length > 0) {
-    html += `<div style="margin-top:16px;border-top:1px solid #EEE;padding-top:12px">
-      <div style="font-size:11px;font-weight:700;color:#444;margin-bottom:8px">自訂品項</div>`;
-    for (const ci of customItems) {
-      html += `<div class="product-item selected">
-        <div class="product-info">
-          <div class="product-name">${escHtml(ci.name)}</div>
-          <div class="product-code">${escHtml(ci.catalogNumber || '—')}</div>
-        </div>
-        <div class="product-price">
-          <div class="price-suggest">${ci.price > 0 ? formatPrice(ci.price) : '洽詢'}</div>
-          <div class="qty-stepper" onclick="event.stopPropagation()">
-            <button class="qty-btn" onclick="changeCustomQty(${ci.id}, -1)">−</button>
-            <span class="qty-val">${ci.quantity}</span>
-            <button class="qty-btn" onclick="changeCustomQty(${ci.id}, 1)">+</button>
-          </div>
-          <button class="btn btn-outline btn-sm" style="margin-top:6px;color:#DC3545;border-color:#DC3545;font-size:11px" onclick="removeCustomItem(${ci.id})">移除</button>
-        </div>
-      </div>`;
-    }
-    html += `</div>`;
-  }
-
-  html += _renderCustomItemForm();
   container.innerHTML = html;
 }
 
@@ -538,6 +424,7 @@ function addToCart(id) {
   extraSelected.set(id, 1);
   renderProducts();
   renderSummary();
+  renderProductSearchResults(document.getElementById('productSearchInput')?.value || '');
 }
 
 function removeFromCart(id) {
@@ -1303,4 +1190,79 @@ async function submitQuote() {
 
 function closeModal(id) {
   document.getElementById(id).classList.remove('open');
+}
+
+// ── 產品搜尋 Modal ────────────────────────────────────────────
+function openProductSearchModal() {
+  const modal = document.getElementById('productSearchModal');
+  if (!modal) return;
+  const input = document.getElementById('productSearchInput');
+  if (input) { input.value = ''; }
+  renderProductSearchResults('');
+  modal.classList.add('open');
+  setTimeout(() => { if (input) input.focus(); }, 100);
+}
+
+function closeProductSearchModal() {
+  const modal = document.getElementById('productSearchModal');
+  if (modal) modal.classList.remove('open');
+}
+
+function renderProductSearchResults(query) {
+  const container = document.getElementById('productSearchResults');
+  if (!container) return;
+
+  const q = (query || '').trim().toLowerCase();
+  let filtered = products;
+  if (q) {
+    filtered = products.filter(p => {
+      const hay = [p.name_zh, p.catalog_number, p.name_en, p.description]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  if (!filtered.length) {
+    container.innerHTML = `<div style="text-align:center;padding:32px;color:#AAA;font-size:13px">找不到符合「${escHtml(query)}」的產品<br><span style="font-size:12px">可使用下方「手動新增自訂品項」</span></div>`;
+    return;
+  }
+
+  const categoryOrder = ['base','orientation','clamping','holder','blade_base','blade_holder','blade','cooling','lighting','accessory'];
+  const grouped = {};
+  filtered.forEach(p => {
+    const cat = p.category || 'accessory';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(p);
+  });
+
+  let html = '';
+  const cats = q ? Object.keys(grouped) : categoryOrder.filter(c => grouped[c]);
+  for (const cat of cats) {
+    const items = grouped[cat];
+    if (!items || !items.length) continue;
+    if (!q) {
+      html += `<div style="font-size:10px;font-weight:700;color:#E3001B;text-transform:uppercase;letter-spacing:0.8px;padding:8px 0 4px;margin-top:4px">${CATEGORY_LABELS[cat] || cat}</div>`;
+    }
+    for (const p of items) {
+      const inCart = extraSelected.has(p.id);
+      const isAuto = autoDeps.has(p.id);
+      html += `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #F0F0F0">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:${inCart ? '#28A745' : '#1A1A2E'}">${escHtml(p.name_zh)}${inCart ? ' ✓' : ''}</div>
+            <div style="font-size:11px;color:#999;font-family:monospace">${escHtml(p.catalog_number || '')}</div>
+            ${p.description ? `<div style="font-size:11px;color:#888;margin-top:2px">${escHtml(p.description)}</div>` : ''}
+          </div>
+          <div style="flex-shrink:0">
+            ${inCart
+              ? `<button class="btn btn-outline btn-sm" style="font-size:11px;color:#DC3545;border-color:#DC3545" onclick="removeFromCart(${p.id})">移除</button>`
+              : isAuto
+                ? `<span style="font-size:11px;color:#888;background:#F5F5F5;padding:3px 8px;border-radius:4px">已自動帶入</span>`
+                : `<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="addToCart(${p.id})">＋ 加入</button>`
+            }
+          </div>
+        </div>`;
+    }
+  }
+  container.innerHTML = html;
 }

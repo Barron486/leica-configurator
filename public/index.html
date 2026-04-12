@@ -72,9 +72,12 @@
 
       <div class="two-col">
 
-    <!-- 左側：產品選擇 -->
+    <!-- 左側：配置品項 -->
     <div class="card">
-      <div class="card-header">產品目錄</div>
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <span>配置品項</span>
+        <button class="btn btn-outline btn-sm" onclick="openProductSearchModal()" style="font-size:12px;padding:4px 10px;white-space:nowrap">🔍 搜尋並新增產品</button>
+      </div>
       <div class="card-body" id="productList">
         <div class="text-muted">載入中…</div>
       </div>
@@ -179,6 +182,26 @@
       <button class="btn btn-outline" onclick="closeModal('quoteModal')">關閉</button>
       <button class="btn btn-outline" onclick="generatePDF()" style="border-color:#555;color:#333">⬇ 儲存 PDF</button>
       <button class="btn btn-red" id="quoteModalSubmitBtn" onclick="submitQuote()">提交報價單</button>
+    </div>
+  </div>
+</div>
+
+<!-- 產品搜尋 Modal -->
+<div class="modal-overlay" id="productSearchModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3>🔍 搜尋並新增產品</h3>
+      <button class="modal-close" onclick="closeProductSearchModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="text" id="productSearchInput"
+        placeholder="輸入品名、料號關鍵字…"
+        oninput="renderProductSearchResults(this.value)"
+        style="width:100%;box-sizing:border-box;margin-bottom:12px">
+      <div id="productSearchResults" style="max-height:380px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeProductSearchModal()">關閉</button>
     </div>
   </div>
 </div>
