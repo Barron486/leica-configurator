@@ -196,9 +196,8 @@
     <div class="modal-body">
       <input type="text" id="productSearchInput"
         placeholder="輸入品名、料號關鍵字…"
-        oninput="renderProductSearchResults(this.value)"
         style="width:100%;box-sizing:border-box;margin-bottom:12px">
-      <div id="productSearchResults" style="max-height:380px;overflow-y:auto"></div>
+      <div id="productSearchResults" style="max-height:380px;overflow-y:auto;min-height:60px"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeProductSearchModal()">關閉</button>

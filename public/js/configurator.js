@@ -424,7 +424,11 @@ function addToCart(id) {
   extraSelected.set(id, 1);
   renderProducts();
   renderSummary();
-  renderProductSearchResults(document.getElementById('productSearchInput')?.value || '');
+  // 搜尋結果同步更新（反映「已加入」狀態）
+  const input = document.getElementById('productSearchInput');
+  if (input && document.getElementById('productSearchModal')?.classList.contains('open')) {
+    renderProductSearchResults(input.value);
+  }
 }
 
 function removeFromCart(id) {
@@ -1198,9 +1202,20 @@ function openProductSearchModal() {
   if (!modal) return;
   const input = document.getElementById('productSearchInput');
   if (input) { input.value = ''; }
-  renderProductSearchResults('');
+  // 空查詢時只顯示提示，不渲染全部產品（大量 DOM 更新會造成 layout shift 使輸入框失去焦點）
+  const resultsEl = document.getElementById('productSearchResults');
+  if (resultsEl) {
+    resultsEl.innerHTML = '<div style="text-align:center;padding:28px;color:#AAA;font-size:13px">請輸入品名或料號關鍵字搜尋</div>';
+  }
   modal.classList.add('open');
-  setTimeout(() => { if (input) input.focus(); }, 100);
+  // 用 addEventListener 綁定，避免 inline oninput 重複綁定或干擾焦點
+  if (input && !input._searchBound) {
+    input.addEventListener('input', function() {
+      renderProductSearchResults(this.value);
+    });
+    input._searchBound = true;
+  }
+  setTimeout(() => { if (input) input.focus(); }, 50);
 }
 
 function closeProductSearchModal() {
@@ -1213,14 +1228,16 @@ function renderProductSearchResults(query) {
   if (!container) return;
 
   const q = (query || '').trim().toLowerCase();
-  let filtered = products;
-  if (q) {
-    filtered = products.filter(p => {
-      const hay = [p.name_zh, p.catalog_number, p.name_en, p.description]
-        .filter(Boolean).join(' ').toLowerCase();
-      return hay.includes(q);
-    });
+  // 空查詢時顯示提示，不渲染全部產品（避免大量 DOM 導致 layout shift）
+  if (!q) {
+    container.innerHTML = '<div style="text-align:center;padding:28px;color:#AAA;font-size:13px">請輸入品名或料號關鍵字搜尋</div>';
+    return;
   }
+  const filtered = products.filter(p => {
+    const hay = [p.name_zh, p.catalog_number, p.name_en, p.description]
+      .filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(q);
+  });
 
   if (!filtered.length) {
     container.innerHTML = `<div style="text-align:center;padding:32px;color:#AAA;font-size:13px">找不到符合「${escHtml(query)}」的產品<br><span style="font-size:12px">可使用下方「手動新增自訂品項」</span></div>`;
