@@ -140,6 +140,7 @@
           <option value="draft">草稿</option>
           <option value="approved">已核准</option>
           <option value="rejected">已退回</option>
+          <option value="trash">🗑 回收桶</option>
         </select>
       </div>
       <button class="btn btn-outline btn-sm" onclick="exportProductsExcel()">⬇ 匯出產品 Excel</button>
@@ -154,12 +155,12 @@
             <th>業務</th>
             <th>狀態</th>
             <th>毛利率</th>
-            <th>建立時間</th>
+            <th id="quoteTimeHeader">建立時間</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody id="quotesBody">
-          <tr><td colspan="7" class="text-muted">載入中…</td></tr>
+          <tr><td colspan="8" class="text-muted">載入中…</td></tr>
         </tbody>
       </table>
     </div>

@@ -593,6 +593,19 @@ function _migrate(db) {
       console.log('Migration 22: performance indexes created');
     } catch(e) { console.error('Migration 22 error:', e.message); }
 
+    // 23. quotes: 加入 deleted_at / deleted_by（報價單回收桶，軟刪除）
+    try {
+      const qCols23 = db.prepare("PRAGMA table_info(quotes)").all().map(c => c.name);
+      if (!qCols23.includes('deleted_at')) {
+        db.exec("ALTER TABLE quotes ADD COLUMN deleted_at DATETIME");
+        console.log('Migration 23a: added quotes.deleted_at');
+      }
+      if (!qCols23.includes('deleted_by')) {
+        db.exec("ALTER TABLE quotes ADD COLUMN deleted_by INTEGER REFERENCES users(id)");
+        console.log('Migration 23b: added quotes.deleted_by');
+      }
+    } catch(e) { console.error('Migration 23 error:', e.message); }
+
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }

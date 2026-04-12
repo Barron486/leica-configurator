@@ -107,10 +107,30 @@ const STATUS_LABELS = {
 };
 
 // ── 通知相關 ──────────────────────────────────────────────────
+let _notifItems = [];
+let _notifPanel = null;
+
+function _escN(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function _timeAgo(str) {
+  if (!str) return '';
+  const diff = Date.now() - new Date(str).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return '剛剛';
+  if (m < 60) return `${m} 分鐘前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小時前`;
+  return `${Math.floor(h / 24)} 天前`;
+}
+
 async function loadNotifications() {
   const res = await apiFetch('/api/notifications');
   if (!res || !res.ok) return;
   const data = await res.json();
+  _notifItems = data.notifications || [];
   const badge = document.getElementById('notifBadge');
   if (badge) {
     if (data.unread > 0) {
@@ -120,15 +140,96 @@ async function loadNotifications() {
       badge.style.display = 'none';
     }
   }
+  // 面板開著就同步更新內容
+  if (_notifPanel && _notifPanel.style.display !== 'none') _renderNotifPanel();
   return data;
 }
 
+function _renderNotifPanel() {
+  if (!_notifPanel) return;
+  if (!_notifItems.length) {
+    _notifPanel.innerHTML = '<div style="padding:28px 16px;text-align:center;color:#999;font-size:13px">目前沒有通知</div>';
+    return;
+  }
+  _notifPanel.innerHTML = `
+    <div style="padding:10px 14px 10px 16px;font-weight:700;font-size:13px;border-bottom:1px solid #EBEBEB;display:flex;justify-content:space-between;align-items:center">
+      <span>通知</span>
+      <button onclick="event.stopPropagation();_markAllRead()" style="background:none;border:none;font-size:12px;color:#0066CC;cursor:pointer;padding:0">全部已讀</button>
+    </div>
+    <div style="max-height:380px;overflow-y:auto">
+      ${_notifItems.map(n => `
+        <div onclick="_clickNotif(${n.id},'${_escN(n.link)}')"
+             style="padding:12px 16px;border-bottom:1px solid #F4F4F4;cursor:pointer;background:${n.read ? 'transparent' : '#EFF6FF'}">
+          <div style="font-size:13px;font-weight:${n.read ? '400' : '600'};margin-bottom:3px;color:#1A1A2E">${_escN(n.title)}</div>
+          ${n.body ? `<div style="font-size:12px;color:#555;margin-bottom:5px;line-height:1.45">${_escN(n.body)}</div>` : ''}
+          <div style="font-size:11px;color:#AAA">${_timeAgo(n.created_at)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function _clickNotif(id, link) {
+  await apiFetch(`/api/notifications/${id}/read`, { method: 'PUT' });
+  _notifItems = _notifItems.map(n => n.id === id ? {...n, read: 1} : n);
+  if (_notifPanel) _notifPanel.style.display = 'none';
+  if (link && link !== 'undefined' && link !== '') {
+    window.location.href = link;
+  } else {
+    loadNotifications();
+  }
+}
+
+async function _markAllRead() {
+  await apiFetch('/api/notifications/read-all', { method: 'PUT' });
+  _notifItems = _notifItems.map(n => ({...n, read: 1}));
+  const badge = document.getElementById('notifBadge');
+  if (badge) badge.style.display = 'none';
+  _renderNotifPanel();
+}
+
+function _closeNotifPanel(e) {
+  if (!_notifPanel) return;
+  const btn = document.getElementById('notifBtn');
+  if (btn && btn.contains(e.target)) return; // 讓 toggle 自己處理
+  if (_notifPanel.contains(e.target)) return;
+  _notifPanel.style.display = 'none';
+}
+
 function toggleNotifPanel() {
-  // 簡易實作：點鈴鐺時標全部已讀並更新 badge
-  apiFetch('/api/notifications/read-all', { method: 'PUT' }).then(() => {
-    const badge = document.getElementById('notifBadge');
-    if (badge) badge.style.display = 'none';
-  });
+  const btn = document.getElementById('notifBtn');
+  if (!btn) return;
+
+  if (!_notifPanel) {
+    _notifPanel = document.createElement('div');
+    _notifPanel.style.cssText = [
+      'position:fixed',
+      'width:320px',
+      'background:#FFF',
+      'border:1px solid #E0E0E0',
+      'border-radius:10px',
+      'box-shadow:0 6px 24px rgba(0,0,0,0.13)',
+      'z-index:2000',
+      'font-family:inherit',
+    ].join(';');
+    document.body.appendChild(_notifPanel);
+    document.addEventListener('click', _closeNotifPanel, true);
+  }
+
+  if (_notifPanel.style.display === 'block') {
+    _notifPanel.style.display = 'none';
+    return;
+  }
+
+  // 定位在鈴鐺按鈕下方
+  const rect = btn.getBoundingClientRect();
+  const panelRight = Math.max(8, window.innerWidth - rect.right);
+  _notifPanel.style.top  = (rect.bottom + 8) + 'px';
+  _notifPanel.style.right = panelRight + 'px';
+  _notifPanel.style.removeProperty('left');
+
+  _renderNotifPanel();
+  _notifPanel.style.display = 'block';
 }
 
 // 每 30 秒輪詢一次通知

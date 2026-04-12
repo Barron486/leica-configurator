@@ -303,7 +303,15 @@ router.get('/quotes', reviewerOnly, (req, res) => {
     LEFT JOIN pricing pr ON pr.product_id = qi.product_id
   `;
   const params = [];
-  if (status) { sql += ' WHERE q.status = ?'; params.push(status); }
+  // 回收桶模式（只顯示已軟刪除）
+  if (status === 'trash') {
+    sql += ' WHERE q.deleted_at IS NOT NULL';
+  } else if (status) {
+    sql += ' WHERE q.status = ? AND q.deleted_at IS NULL';
+    params.push(status);
+  } else {
+    sql += ' WHERE q.deleted_at IS NULL';
+  }
   sql += ' GROUP BY q.id ORDER BY q.created_at DESC';
   const rows = db.prepare(sql).all(...params);
   db.close();

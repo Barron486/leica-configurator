@@ -257,7 +257,7 @@ async function deleteQuote(id, num) {
   const res = await apiFetch(`/api/quotes/${id}`, { method: 'DELETE' });
   if (!res || !res.ok) { showToast('刪除失敗', 'error'); return; }
   closeModal('quoteModal');
-  showToast('已刪除', 'success');
+  showToast('草稿已刪除', 'success');
   await loadQuotes();
 }
 

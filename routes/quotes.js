@@ -53,6 +53,42 @@ function generateQuoteNumber(db, prefix) {
 
 const REVIEWER_ROLES = ['admin', 'super_admin', 'finance', 'management', 'gm'];
 
+// 自訂品項匯入資料庫：若有料號則找舊品更新定價，否則建立新品
+function findOrCreateCustomProduct(db, name, catalogNumber, cost, suggestedPrice) {
+  if (catalogNumber) {
+    const existing = db.prepare('SELECT id FROM products WHERE catalog_number = ?').get(catalogNumber);
+    if (existing) {
+      const ep = db.prepare('SELECT id FROM pricing WHERE product_id = ?').get(existing.id);
+      if (ep) {
+        db.prepare('UPDATE pricing SET cost_price=?, suggested_price=?, updated_at=CURRENT_TIMESTAMP WHERE product_id=?')
+          .run(cost || 0, suggestedPrice || 0, existing.id);
+      } else {
+        db.prepare('INSERT INTO pricing (product_id, cost_price, suggested_price) VALUES (?,?,?)')
+          .run(existing.id, cost || 0, suggestedPrice || 0);
+      }
+      return existing.id;
+    }
+  }
+  // 建立新產品（無料號則自動產生）
+  const catNum = catalogNumber || `CUSTOM_${Date.now()}_${Math.floor(Math.random() * 9000) + 1000}`;
+  let productId;
+  try {
+    const r = db.prepare(
+      "INSERT INTO products (catalog_number, name_zh, category, active) VALUES (?, ?, 'custom', 1)"
+    ).run(catNum, name);
+    productId = r.lastInsertRowid;
+  } catch(_e) {
+    // 極少數料號碰撞：加隨機後綴重試
+    const r2 = db.prepare(
+      "INSERT INTO products (catalog_number, name_zh, category, active) VALUES (?, ?, 'custom', 1)"
+    ).run(`${catNum}_${Math.floor(Math.random() * 9000) + 1000}`, name);
+    productId = r2.lastInsertRowid;
+  }
+  db.prepare('INSERT INTO pricing (product_id, cost_price, suggested_price) VALUES (?,?,?)')
+    .run(productId, cost || 0, suggestedPrice || 0);
+  return productId;
+}
+
 // 判斷此用戶是否有資格審核某報價
 function canReview(db, userId, userRole, quote) {
   if (userRole === 'admin') return true;
@@ -85,7 +121,8 @@ router.get('/', (req, res) => {
   if (role === 'admin' || REVIEWER_ROLES.includes(role)) {
     rows = db.prepare(`
       SELECT q.*, u.display_name AS sales_name FROM quotes q
-      LEFT JOIN users u ON u.id = q.sales_user_id ORDER BY q.created_at DESC
+      LEFT JOIN users u ON u.id = q.sales_user_id
+      WHERE q.deleted_at IS NULL ORDER BY q.created_at DESC
     `).all();
   } else if (role === 'pm') {
     // PM 看見待自己審核的報價 + 自己已處理的
@@ -94,14 +131,14 @@ router.get('/', (req, res) => {
       LEFT JOIN users u ON u.id = q.sales_user_id
       LEFT JOIN quote_items qi ON qi.quote_id = q.id
       LEFT JOIN products p ON p.id = qi.product_id
-      WHERE p.pm_user_id = ? OR q.sales_user_id = ?
+      WHERE (p.pm_user_id = ? OR q.sales_user_id = ?) AND q.deleted_at IS NULL
       ORDER BY q.created_at DESC
     `).all(userId, userId);
   } else {
     rows = db.prepare(`
       SELECT q.*, u.display_name AS sales_name FROM quotes q
       LEFT JOIN users u ON u.id = q.sales_user_id
-      WHERE q.sales_user_id = ? ORDER BY q.created_at DESC
+      WHERE q.sales_user_id = ? AND q.deleted_at IS NULL ORDER BY q.created_at DESC
     `).all(userId);
   }
 
@@ -117,11 +154,28 @@ router.get('/my', (req, res) => {
     SELECT q.*, u.display_name AS sales_name
     FROM quotes q
     LEFT JOIN users u ON u.id = q.sales_user_id
-    WHERE q.sales_user_id = ?
+    WHERE q.sales_user_id = ? AND q.deleted_at IS NULL
     ORDER BY q.created_at DESC
   `).all(userId);
   db.close();
   res.json(quotes);
+});
+
+// 管理員：取得回收桶中的報價單
+router.get('/trash', (req, res) => {
+  const { role } = req.user;
+  if (!['admin','super_admin'].includes(role)) return res.status(403).json({ error: '需要管理員權限' });
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT q.*, u.display_name AS sales_name, d.display_name AS deleted_by_name
+    FROM quotes q
+    LEFT JOIN users u ON u.id = q.sales_user_id
+    LEFT JOIN users d ON d.id = q.deleted_by
+    WHERE q.deleted_at IS NOT NULL
+    ORDER BY q.deleted_at DESC
+  `).all();
+  db.close();
+  res.json(rows);
 });
 
 // Get quote detail with items
@@ -187,7 +241,9 @@ router.post('/', (req, res) => {
       insertItem.run(quoteId, item.product_id, '', '', item.quantity || 1, price, priceType);
     } else if (item.custom_name) {
       const unitPrice = parseFloat(item.unit_price) || 0;
-      insertItem.run(quoteId, null, item.custom_name, item.custom_catalog_number || '', item.quantity || 1, unitPrice, 'custom');
+      const cost = parseFloat(item.custom_cost) || 0;
+      const productId = findOrCreateCustomProduct(db, item.custom_name, item.custom_catalog_number || '', cost, unitPrice);
+      insertItem.run(quoteId, productId, item.custom_name, item.custom_catalog_number || '', item.quantity || 1, unitPrice, 'custom');
     }
   }
 
@@ -226,7 +282,10 @@ router.put('/:id', (req, res) => {
         const price = item.unit_price ?? (pricing ? (priceType === 'suggested' ? pricing.suggested_price : pricing.retail_price) : 0);
         insertItem.run(req.params.id, item.product_id, '', '', item.quantity || 1, price, priceType);
       } else if (item.custom_name) {
-        insertItem.run(req.params.id, null, item.custom_name, item.custom_catalog_number || '', item.quantity || 1, parseFloat(item.unit_price) || 0, 'custom');
+        const unitPrice2 = parseFloat(item.unit_price) || 0;
+        const cost2 = parseFloat(item.custom_cost) || 0;
+        const productId2 = findOrCreateCustomProduct(db, item.custom_name, item.custom_catalog_number || '', cost2, unitPrice2);
+        insertItem.run(req.params.id, productId2, item.custom_name, item.custom_catalog_number || '', item.quantity || 1, unitPrice2, 'custom');
       }
     }
   });
@@ -389,20 +448,46 @@ router.put('/:id/reject', (req, res) => {
   res.json({ message: '報價單已退回' });
 });
 
-// 刪除報價單（管理員可刪任何，業務只能刪自己的草稿）
+// 刪除報價單（軟刪除，放入回收桶）
 router.delete('/:id', (req, res) => {
   const { role, id: userId } = req.user;
   const db = getDb();
-  const quote = db.prepare('SELECT * FROM quotes WHERE id=?').get(req.params.id);
+  const quote = db.prepare('SELECT * FROM quotes WHERE id=? AND deleted_at IS NULL').get(req.params.id);
   if (!quote) { db.close(); return res.status(404).json({ error: '報價單不存在' }); }
   const isAdmin = ['admin','super_admin'].includes(role);
   if (!isAdmin && (quote.sales_user_id !== userId || quote.status !== 'draft')) {
     db.close(); return res.status(403).json({ error: '只能刪除自己的草稿報價單' });
   }
-  db.prepare('DELETE FROM quotes WHERE id=?').run(req.params.id);
+  db.prepare('UPDATE quotes SET deleted_at=CURRENT_TIMESTAMP, deleted_by=? WHERE id=?').run(userId, req.params.id);
   db.close();
   logAudit({ userId, username: req.user.username, role, action: 'delete_quote', resource: 'quotes', resourceId: quote.id, detail: { quote_number: quote.quote_number, status: quote.status }, ip: getIp(req) });
-  res.json({ message: '已刪除' });
+  res.json({ message: '已移至回收桶' });
+});
+
+// 從回收桶還原報價單（管理員限定）
+router.put('/:id/restore', (req, res) => {
+  const { role, id: userId } = req.user;
+  if (!['admin','super_admin'].includes(role)) return res.status(403).json({ error: '需要管理員權限' });
+  const db = getDb();
+  const quote = db.prepare('SELECT * FROM quotes WHERE id=? AND deleted_at IS NOT NULL').get(req.params.id);
+  if (!quote) { db.close(); return res.status(404).json({ error: '回收桶中找不到此報價單' }); }
+  db.prepare('UPDATE quotes SET deleted_at=NULL, deleted_by=NULL WHERE id=?').run(req.params.id);
+  db.close();
+  logAudit({ userId, username: req.user.username, role, action: 'restore_quote', resource: 'quotes', resourceId: quote.id, detail: { quote_number: quote.quote_number }, ip: getIp(req) });
+  res.json({ message: '報價單已還原' });
+});
+
+// 永久刪除（管理員限定，不可復原）
+router.delete('/:id/purge', (req, res) => {
+  const { role, id: userId } = req.user;
+  if (!['admin','super_admin'].includes(role)) return res.status(403).json({ error: '需要管理員權限' });
+  const db = getDb();
+  const quote = db.prepare('SELECT * FROM quotes WHERE id=?').get(req.params.id);
+  if (!quote) { db.close(); return res.status(404).json({ error: '報價單不存在' }); }
+  db.prepare('DELETE FROM quotes WHERE id=?').run(req.params.id);
+  db.close();
+  logAudit({ userId, username: req.user.username, role, action: 'purge_quote', resource: 'quotes', resourceId: quote.id, detail: { quote_number: quote.quote_number }, ip: getIp(req) });
+  res.json({ message: '已永久刪除' });
 });
 
 module.exports = router;

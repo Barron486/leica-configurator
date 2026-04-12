@@ -62,6 +62,10 @@ async function applyRolePermTabs(user) {
     return;
   }
 
+  // 非管理員：隱藏回收桶選項
+  const trashOption = document.querySelector('#quoteFilter option[value="trash"]');
+  if (trashOption) trashOption.style.display = 'none';
+
   // 取得此角色的 role_permissions
   const res = await apiFetch('/api/admin/role-permissions/me');
   const rp = (res && res.ok) ? await res.json() : {};
@@ -109,13 +113,18 @@ function switchTab(name) {
 // ── Quotes ────────────────────────────────────────────────────
 async function loadQuotes() {
   const filter = document.getElementById('quoteFilter')?.value || '';
+  const isTrash = filter === 'trash';
   const res = await apiFetch(`/api/admin/quotes${filter ? '?status=' + filter : ''}`);
   if (!res || !res.ok) return;
   const quotes = await res.json();
 
+  // 切換「建立時間」/「刪除時間」欄位標題
+  const timeHeader = document.getElementById('quoteTimeHeader');
+  if (timeHeader) timeHeader.textContent = isTrash ? '刪除時間' : '建立時間';
+
   const tbody = document.getElementById('quotesBody');
   if (!quotes.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-muted">無報價單</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="8" class="text-muted">${isTrash ? '回收桶是空的' : '無報價單'}</td></tr>`;
     return;
   }
 
@@ -125,6 +134,23 @@ async function loadQuotes() {
     const marginHtml = margin !== null && margin !== undefined
       ? `<span style="color:${lowMargin ? '#DC3545' : '#28A745'}; font-weight:${lowMargin ? '700' : '400'}">${margin}%${lowMargin ? ' ⚠' : ''}</span>`
       : '<span class="text-muted">—</span>';
+
+    if (isTrash) {
+      return `
+      <tr style="opacity:0.7">
+        <td><strong>${q.quote_number}</strong></td>
+        <td>${q.customer_name}</td>
+        <td>${q.customer_org || '—'}</td>
+        <td>${q.sales_name || '—'}</td>
+        <td><span class="status-badge status-${q.status}">${STATUS_LABELS[q.status] || q.status}</span></td>
+        <td>${marginHtml}</td>
+        <td class="text-small text-muted">${formatDate(q.deleted_at || q.created_at)}</td>
+        <td style="display:flex;gap:4px">
+          <button class="btn btn-outline btn-sm" onclick="restoreQuote(${q.id}, '${q.quote_number}')">↩ 還原</button>
+          <button class="btn btn-outline btn-sm" style="color:#DC3545;border-color:#DC3545" onclick="purgeQuote(${q.id}, '${q.quote_number}')">🗑 永久刪除</button>
+        </td>
+      </tr>`;
+    }
 
     return `
     <tr${lowMargin ? ' style="background:#FFF5F5"' : ''}>
@@ -138,6 +164,22 @@ async function loadQuotes() {
       <td><button class="btn btn-outline btn-sm" onclick="openQuoteDetail(${q.id})">查看</button></td>
     </tr>`;
   }).join('');
+}
+
+async function restoreQuote(id, num) {
+  if (!confirm(`確定還原報價單「${num}」？`)) return;
+  const res = await apiFetch(`/api/quotes/${id}/restore`, { method: 'PUT' });
+  if (!res || !res.ok) { showToast('還原失敗', 'error'); return; }
+  showToast('已還原', 'success');
+  loadQuotes();
+}
+
+async function purgeQuote(id, num) {
+  if (!confirm(`永久刪除「${num}」？此操作完全無法復原。`)) return;
+  const res = await apiFetch(`/api/quotes/${id}/purge`, { method: 'DELETE' });
+  if (!res || !res.ok) { showToast('刪除失敗', 'error'); return; }
+  showToast('已永久刪除', 'success');
+  loadQuotes();
 }
 
 async function openQuoteDetail(id) {
@@ -154,8 +196,8 @@ async function openQuoteDetail(id) {
 
   let itemsHtml = q.items.map(it => `
     <tr>
-      <td>${it.catalog_number}</td>
-      <td>${it.name_zh}</td>
+      <td class="text-small">${esc(it.catalog_number || it.custom_catalog_number || '—')}</td>
+      <td>${esc(it.name_zh || it.custom_item_name || '—')}</td>
       <td style="text-align:center">${it.quantity}</td>
       <td style="text-align:right">${it.unit_price_snapshot > 0 ? formatPrice(it.unit_price_snapshot) : '洽詢'}</td>
     </tr>
@@ -264,11 +306,11 @@ async function reviewQuote(id, action) {
 }
 
 async function deleteQuoteAdmin(id, num) {
-  if (!confirm(`確定刪除報價單「${num}」？此操作無法復原。`)) return;
+  if (!confirm(`確定將報價單「${num}」移至回收桶？可至回收桶還原或永久刪除。`)) return;
   const res = await apiFetch(`/api/quotes/${id}`, { method: 'DELETE' });
-  if (!res || !res.ok) { showToast('刪除失敗', 'error'); return; }
+  if (!res || !res.ok) { showToast('操作失敗', 'error'); return; }
   closeModal('quoteDetailModal');
-  showToast('已刪除', 'success');
+  showToast('已移至回收桶', 'success');
   loadQuotes();
 }
 
