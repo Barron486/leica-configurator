@@ -34,10 +34,14 @@ function requireAuth() {
   return user;
 }
 
-function logout() {
+async function logout() {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
-  window.location = '/login.html';
+  try {
+    await fetch('/access/logout', { method: 'POST' });
+  } finally {
+    window.location = '/access';
+  }
 }
 
 async function apiFetch(path, options = {}) {

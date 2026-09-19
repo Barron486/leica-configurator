@@ -6,6 +6,7 @@ const helmet     = require('helmet');
 const rateLimit  = require('express-rate-limit');
 const jwt        = require('jsonwebtoken');
 const path       = require('path');
+const { createSiteAccess } = require('./middleware/site-access');
 
 const { initSchema } = require('./database/schema');
 initSchema();
@@ -50,6 +51,7 @@ app.use(helmet({
 // ── CORS（僅允許同源，正式環境可加白名單）──────────────────
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || false }));
 
+app.use(createSiteAccess());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
