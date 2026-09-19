@@ -236,10 +236,33 @@ leica-configurator/
 
 1. 建立 Railway 專案，連結此 GitHub repo
 2. 設定環境變數（至少填入 `JWT_SECRET`）
-3. Railway 會自動執行 `Procfile` 中的 `npm start`
-4. 資料庫使用 SQLite 單一檔案，重新部署不會遺失資料（需掛載 Volume）
+3. 完成下方「網站入口保護」設定，再部署；缺少入口設定時全站會回覆無品牌資訊的 503
+4. Railway 會自動執行 `Procfile` 中的 `npm start`
+5. 資料庫使用 SQLite 單一檔案，重新部署不會遺失資料（需掛載 Volume）
 
 > **注意**：若使用 Railway Volume，請將 `leica.db` 路徑設為 Volume 掛載路徑，避免重新部署時資料被清除。
+
+### 網站入口保護
+
+所有 HTML（含原本的登入頁）、CSS、JavaScript 與 API，必須先通過 Google Workspace 驗證。
+訪客只能看到不帶公司名稱的 `/access` 入口；驗證失敗不顯示允許的網域、帳號資料或 Google 錯誤細節。
+入口驗證通過後，仍須使用既有系統帳號登入，原本的角色與審批權限保持不變。
+
+**部署前設定：**
+
+1. 在公司 Google Cloud 專案建立 Web application OAuth 用戶端。若可用，將 OAuth audience 設成 Internal；對外可見的應用程式名稱使用中性名稱（例如 Private Portal），不要使用公司名稱、Logo 或公司描述。
+2. 加入唯一且精確的 authorized redirect URI：`https://你的網站網域/access/callback`。
+3. 在 Railway 設定 `SITE_ORIGIN`（例如 `https://你的網站網域`，不含路徑）、`GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`GOOGLE_WORKSPACE_DOMAIN`（僅網域，不含 `@`）與 `SITE_SESSION_SECRET`。最後一項使用獨立隨機密鑰，至少 32 bytes，勿與 `JWT_SECRET` 共用；密鑰不得提交至 Git。
+4. 確認公司 Google Workspace 的實際 hosted domain；伺服器驗證 Google 已簽章 ID token 的 `hd`、audience、issuer、有效期、nonce 與 `email_verified`，不以 email 後綴代替驗證，也不在公開 OAuth URL 放入公司網域提示。
+5. Railway 健康檢查路徑設為 `/healthz`。這個端點只回傳 `ok` 或 `unavailable`。
+6. **在 Cloudflare/CDN 對整個網站設定 bypass cache，清除部署前已快取的所有 HTML、JS、CSS。** 回應會帶有 private/no-store 與 CDN no-store headers，但既有快取或強制覆蓋 origin headers 的規則仍須處理。檢查自訂網域與 Railway 原始網域都不能繞過入口。
+7. 用無痕視窗確認 `/login.html`、`/admin.html`、`/js/auth.js`、`/api/products` 無法直接取得內容；用非公司帳號確認拒絕存取，再用公司帳號完成真實登入驗收。
+
+Cookie 使用 HttpOnly、Secure、SameSite=Lax、host-only；入口 session 最長 8 小時，登出會清除瀏覽器的入口 Cookie。OAuth 使用 state + 瀏覽器綁定、nonce、PKCE 與一次性 callback。待完成的 OAuth 流程只保存在單一程序記憶體中，**目前須維持一個 Railway replica**；多 replica 需先改用共用的一次性 flow store。部署重啟期間尚未完成的登入需重新開始。
+
+本機開發亦需設定 OAuth，可使用 `http://localhost:3000` 與對應 callback；只有 loopback HTTP 允許非 Secure Cookie，沒有關閉入口驗證的開關。執行 `npm test` 可測試未登入存取、外部帳號、state/nonce、偽造或過期 Cookie、設定缺漏及快取標頭；測試使用模擬 Google 回應，正式 Google OAuth 與 CDN 仍需上線驗收。
+
+網站入口保護無法移除公開 GitHub 原始碼、既有搜尋索引、網域名稱或歷史紀錄內的公司資訊。若儲存庫維持公開，README 與原始碼仍可直接閱讀；需另行調整儲存庫可見性。Google 管理的登入或 OAuth 畫面也須實際檢查顯示名稱。
 
 ---
 
